@@ -2,13 +2,26 @@
 document.addEventListener('DOMContentLoaded', () => {
     // Wait for Firebase to be ready
     const waitForFirebase = setInterval(() => {
-        if (window.database && window.ref) {
+        if (window.firebaseReady && window.database) {
             clearInterval(waitForFirebase);
             initializeApp();
         }
     }, 100);
+    
+    // Failsafe: initialize after 5 seconds even if not ready
+    setTimeout(() => {
+        if (!window.firebaseReady) {
+            console.log('Firebase timeout, initializing anyway');
+            window.database = window.database || {};
+            initializeApp();
+        }
+    }, 5000);
 
     function initializeApp() {
+        console.log('🚀 App initializing...');
+        console.log('firebase ready:', !!window.firebaseReady);
+        console.log('database ready:', !!window.database);
+        
         // DOM Elements
         const setupScreen = document.getElementById('setup-screen');
         const chatScreen = document.getElementById('chat-screen');
@@ -113,14 +126,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('Please enter a username');
                 return;
             }
+            
+            if (!window.database) {
+                alert('Chat is loading. Please wait a moment and try again.');
+                console.error('Firebase database not ready');
+                return;
+            }
+            
             username = name;
             localStorage.setItem('username', username);
             localStorage.setItem('userColor', userColor);
             
-            showChatScreen();
-            setupOnlineStatus();
-            listenForMessages();
-            isInitialized = true;
+            try {
+                showChatScreen();
+                setupOnlineStatus();
+                listenForMessages();
+                isInitialized = true;
+            } catch (err) {
+                console.error('Error entering chat:', err);
+                alert('Error entering chat: ' + err.message);
+            }
         }
 
         function showChatScreen() {

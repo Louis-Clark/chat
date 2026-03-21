@@ -21,6 +21,8 @@
 
         firebase.initializeApp(firebaseConfig);
         window.database = firebase.database();
+        window.firebaseReady = true;
+        console.log('✅ Firebase initialized successfully');
     </script>
     <!-- Emoji Picker -->
     <link href="https://cdn.jsdelivr.net/npm/emoji-picker-element@1.0.0" rel="stylesheet">
