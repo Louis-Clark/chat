@@ -220,58 +220,50 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // Upload to Cloud Storage
-            try {
-                const storage = window.storage;
-                if (!storage) {
-                    console.error('Storage not initialized. Firebase Storage SDK may not have loaded.');
-                    console.log('window.storage:', window.storage);
-                    console.log('firebase:', typeof firebase);
-                    alert('Cloud Storage is not available. Check your Firebase setup and ensure the storageBucket is configured in your Firebase project.');
-                    return;
-                }
+            // Upload to Cloudinary
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('upload_preset', window.CLOUDINARY_UPLOAD_PRESET);
 
-                // Create a unique path for the file
-                const timestamp = Date.now();
-                const fileName = `${mediaType}/${userId}-${timestamp}-${file.name}`;
-                const storageRef = storage.ref(fileName);
+            console.log('📤 Uploading to Cloudinary...');
 
-                console.log('📤 Uploading to Cloud Storage:', fileName);
+            fetch(`https://api.cloudinary.com/v1_1/${window.CLOUDINARY_CLOUD_NAME}/auto/upload`, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) throw new Error('Upload failed: ' + response.statusText);
+                return response.json();
+            })
+            .then(data => {
+                console.log('✅ Upload complete:', data.secure_url);
 
-                storageRef.put(file).then((snapshot) => {
-                    return snapshot.ref.getDownloadURL();
-                }).then((downloadURL) => {
-                    console.log('✅ Upload complete, URL:', downloadURL);
-
-                    const db = window.database;
-                    db.ref('messages').push({
-                        username: username,
-                        text: mediaType === 'image' ? '📷 Shared an image' : mediaType === 'video' ? '🎬 Shared a video' : '🎵 Shared audio',
-                        timestamp: Date.now(),
-                        userId: userId,
-                        userColor: userColor,
-                        isMedia: true,
-                        mediaType: mediaType,
-                        mediaUrl: downloadURL
-                    }, (error) => {
-                        if (error) {
-                            console.error('Error saving message:', error);
-                            alert('Error saving message: ' + error.message);
-                        } else {
-                            console.log('✅ Message saved');
-                        }
-                    });
-
-                    mediaInput.value = '';
-                }).catch((error) => {
-                    console.error('❌ Upload error:', error);
-                    alert('Upload failed: ' + error.message);
-                    mediaInput.value = '';
+                const db = window.database;
+                db.ref('messages').push({
+                    username: username,
+                    text: mediaType === 'image' ? '📷 Shared an image' : mediaType === 'video' ? '🎬 Shared a video' : '🎵 Shared audio',
+                    timestamp: Date.now(),
+                    userId: userId,
+                    userColor: userColor,
+                    isMedia: true,
+                    mediaType: mediaType,
+                    mediaUrl: data.secure_url
+                }, (error) => {
+                    if (error) {
+                        console.error('Error saving message:', error);
+                        alert('Error saving message: ' + error.message);
+                    } else {
+                        console.log('✅ Message saved');
+                    }
                 });
-            } catch (err) {
-                console.error('Error preparing upload:', err);
-                alert('Error: ' + err.message);
-            }
+
+                mediaInput.value = '';
+            })
+            .catch((error) => {
+                console.error('❌ Upload error:', error);
+                alert('Upload failed: ' + error.message);
+                mediaInput.value = '';
+            });
         }
 
         function displayMessage(message) {
