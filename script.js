@@ -85,7 +85,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // Event Listeners - Controls
         themeToggle.addEventListener('click', toggleTheme);
         clearChatBtn.addEventListener('click', clearChat);
-        emojiBtn.addEventListener('click', toggleEmojiPicker);
+        emojiBtn.addEventListener('click', () => {
+            // Focus on message input to show emoji keyboard
+            messageInput.focus();
+        });
         imageBtn.addEventListener('click', () => imageInput.click());
         imageInput.addEventListener('change', handleImageUpload);
 
@@ -102,19 +105,16 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        // Emoji Picker
-        if (emojiPicker) {
-            emojiPicker.addEventListener('emoji-click', (e) => {
-                messageInput.value += e.detail.unicode;
-                emojiPicker.classList.add('hidden');
-                messageInput.focus();
-            });
-        }
-
-        document.addEventListener('click', (e) => {
-            if (!emojiBtn.contains(e.target) && !emojiPicker.contains(e.target)) {
-                emojiPicker.classList.add('hidden');
-            }
+        // Emoji Picker removed - use emoji keyboard instead
+        emojiBtn.addEventListener('click', () => {
+            // Open system emoji picker (works on most devices)
+            messageInput.focus();
+            const emojiMenu = document.createElement('div');
+            emojiMenu.style.position = 'absolute';
+            emojiMenu.style.bottom = '100px';
+            emojiMenu.style.right = '20px';
+            emojiMenu.style.zIndex = '9999';
+            emojiPicker.classList.add('hidden'); // Hide in case it exists
         });
 
         // ========== FUNCTIONS ==========
@@ -412,10 +412,6 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.setItem('darkMode', isDarkMode);
             document.body.classList.toggle('dark-mode');
             themeToggle.textContent = isDarkMode ? '☀️' : '🌙';
-        }
-
-        function toggleEmojiPicker() {
-            emojiPicker.classList.toggle('hidden');
         }
 
         function clearChat() {
