@@ -360,6 +360,14 @@ body {
     transform: scale(1.02);
 }
 
+.message-video,
+.message-audio {
+    width: 100%;
+    max-width: 330px;
+    margin-top: 6px;
+    border-radius: 8px;
+}
+
 .message-text {
     word-wrap: break-word;
     white-space: pre-wrap;

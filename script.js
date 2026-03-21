@@ -37,8 +37,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const themeToggle = document.getElementById('theme-toggle');
         const clearChatBtn = document.getElementById('clear-chat');
         const emojiBtn = document.getElementById('emoji-btn');
-        const imageBtn = document.getElementById('image-btn');
-        const imageInput = document.getElementById('image-input');
+        const mediaBtn = document.getElementById('media-btn');
+        const mediaInput = document.getElementById('media-input');
         const emojiPicker = document.getElementById('emoji-picker');
         const typingIndicator = document.getElementById('typing-indicator');
         const colorButtons = document.querySelectorAll('.color-btn');
@@ -95,8 +95,8 @@ document.addEventListener('DOMContentLoaded', () => {
             // Focus on message input to show emoji keyboard
             messageInput.focus();
         });
-        imageBtn.addEventListener('click', () => imageInput.click());
-        imageInput.addEventListener('change', handleImageUpload);
+        mediaBtn.addEventListener('click', () => mediaInput.click());
+        mediaInput.addEventListener('change', handleMediaUpload);
 
         // Color selectors
         colorButtons.forEach(btn => {
@@ -191,7 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     timestamp: Date.now(),
                     userId: userId,
                     userColor: userColor,
-                    isImage: false
+                    isMedia: false
                 };
 
                 db.ref('messages').push(messageData, function(error) {
@@ -212,29 +212,47 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        function handleImageUpload(e) {
+        function handleMediaUpload(e) {
             const file = e.target.files[0];
             if (!file) return;
+
+            const fileType = file.type;
+            let mediaType = 'unknown';
+
+            if (fileType.startsWith('image/')) {
+                mediaType = 'image';
+            } else if (fileType.startsWith('video/')) {
+                mediaType = 'video';
+            } else if (fileType.startsWith('audio/')) {
+                mediaType = 'audio';
+            }
+
+            if (mediaType === 'unknown') {
+                alert('Unsupported file type. Please upload an image, video, or audio file.');
+                return;
+            }
 
             const reader = new FileReader();
             reader.onload = (event) => {
                 try {
                     const base64 = event.target.result;
                     const db = window.database;
-                    
+
                     db.ref('messages').push({
                         username: username,
-                        text: '📷 Shared an image',
+                        text: mediaType === 'image' ? '📷 Shared an image' : mediaType === 'video' ? '🎬 Shared a video' : '🎵 Shared audio',
                         timestamp: Date.now(),
                         userId: userId,
                         userColor: userColor,
-                        isImage: true,
-                        imageUrl: base64
+                        isMedia: true,
+                        mediaType: mediaType,
+                        mediaUrl: base64
                     });
 
-                    imageInput.value = '';
+                    mediaInput.value = '';
                 } catch (err) {
-                    console.error('Error uploading image:', err);
+                    console.error('Error uploading media:', err);
+                    alert('Error uploading media: ' + err.message);
                 }
             };
 
@@ -261,8 +279,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
             `;
 
-            if (message.isImage && message.imageUrl) {
-                content += `<img src="${message.imageUrl}" class="message-image" alt="shared image">`;
+            if (message.isMedia && message.mediaUrl) {
+                if (message.mediaType === 'image') {
+                    content += `<img src="${message.mediaUrl}" class="message-image" alt="shared image">`;
+                } else if (message.mediaType === 'video') {
+                    content += `<video controls class="message-video"><source src="${message.mediaUrl}" type="video/mp4">Your browser does not support video playback.</video>`;
+                } else if (message.mediaType === 'audio') {
+                    content += `<audio controls class="message-audio"><source src="${message.mediaUrl}" type="audio/mpeg">Your browser does not support audio playback.</audio>`;
+                } else {
+                    content += `<div class="message-text">${linkifyText(escapeHtml(message.text))}</div>`;
+                }
             } else {
                 content += `<div class="message-text">${linkifyText(escapeHtml(message.text))}</div>`;
             }
