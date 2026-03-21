@@ -232,12 +232,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                try {
-                    const base64 = event.target.result;
-                    const db = window.database;
+            // Upload to Cloud Storage
+            try {
+                const storage = window.storage;
+                if (!storage) {
+                    alert('Storage not available');
+                    return;
+                }
 
+                // Create a unique path for the file
+                const timestamp = Date.now();
+                const fileName = `${mediaType}/${userId}-${timestamp}-${file.name}`;
+                const storageRef = storage.ref(fileName);
+
+                console.log('📤 Uploading to Cloud Storage:', fileName);
+
+                storageRef.put(file).then((snapshot) => {
+                    return snapshot.ref.getDownloadURL();
+                }).then((downloadURL) => {
+                    console.log('✅ Upload complete, URL:', downloadURL);
+
+                    const db = window.database;
                     db.ref('messages').push({
                         username: username,
                         text: mediaType === 'image' ? '📷 Shared an image' : mediaType === 'video' ? '🎬 Shared a video' : '🎵 Shared audio',
@@ -246,17 +261,26 @@ document.addEventListener('DOMContentLoaded', () => {
                         userColor: userColor,
                         isMedia: true,
                         mediaType: mediaType,
-                        mediaUrl: base64
+                        mediaUrl: downloadURL
+                    }, (error) => {
+                        if (error) {
+                            console.error('Error saving message:', error);
+                            alert('Error saving message: ' + error.message);
+                        } else {
+                            console.log('✅ Message saved');
+                        }
                     });
 
                     mediaInput.value = '';
-                } catch (err) {
-                    console.error('Error uploading media:', err);
-                    alert('Error uploading media: ' + err.message);
-                }
-            };
-
-            reader.readAsDataURL(file);
+                }).catch((error) => {
+                    console.error('❌ Upload error:', error);
+                    alert('Upload failed: ' + error.message);
+                    mediaInput.value = '';
+                });
+            } catch (err) {
+                console.error('Error preparing upload:', err);
+                alert('Error: ' + err.message);
+            }
         }
 
         function displayMessage(message) {

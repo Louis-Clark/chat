@@ -8,6 +8,7 @@
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
     <script>
         const firebaseConfig = {
             apiKey: "AIzaSyCprAoKDodLuhCkv7j7HWWIGCfceC88Kls",
@@ -21,6 +22,7 @@
 
         firebase.initializeApp(firebaseConfig);
         window.database = firebase.database();
+        window.storage = firebase.storage();
         window.firebaseReady = true;
         console.log('✅ Firebase initialized successfully');
     </script>
