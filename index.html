@@ -6,10 +6,9 @@
     <title>Real-time Chat</title>
     <link rel="stylesheet" href="style.css">
     <!-- Firebase SDK -->
-    <script type="module">
-        import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js';
-        import { getDatabase, ref, push, onChildAdded, onChildRemoved, update } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js';
-
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <script>
         const firebaseConfig = {
             apiKey: "AIzaSyCprAoKDodLuhCkv7j7HWWIGCfceC88Kls",
             authDomain: "chat-8f390.firebaseapp.com",
@@ -20,16 +19,8 @@
             appId: "1:419574515896:web:5d48b44ad7653c6be14c4d"
         };
 
-        const app = initializeApp(firebaseConfig);
-        const database = getDatabase(app);
-
-        window.firebaseApp = app;
-        window.database = database;
-        window.ref = ref;
-        window.push = push;
-        window.onChildAdded = onChildAdded;
-        window.onChildRemoved = onChildRemoved;
-        window.firebaseUpdate = update;
+        firebase.initializeApp(firebaseConfig);
+        window.database = firebase.database();
     </script>
     <!-- Emoji Picker -->
     <link href="https://cdn.jsdelivr.net/npm/emoji-picker-element@1.0.0" rel="stylesheet">

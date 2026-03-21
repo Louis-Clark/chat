@@ -2,7 +2,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     // Wait for Firebase to be ready
     const waitForFirebase = setInterval(() => {
-        if (window.database && window.ref && window.push && window.firebaseUpdate) {
+        if (window.database && window.ref) {
             clearInterval(waitForFirebase);
             initializeApp();
         }
@@ -36,8 +36,6 @@ document.addEventListener('DOMContentLoaded', () => {
         let onlineUsers = new Set();
         let typingUsers = new Set();
         let isInitialized = false;
-        let messagesListener = null;
-        let typingListener = null;
 
         // Initialize theme
         if (isDarkMode) {
@@ -138,21 +136,25 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!text || !isInitialized) return;
 
             try {
-                const messagesRef = window.ref(window.database, 'messages');
-                window.push(messagesRef, {
+                const db = window.database;
+                db.ref('messages').push({
                     username: username,
                     text: text,
                     timestamp: Date.now(),
                     userId: userId,
                     userColor: userColor,
                     isImage: false
+                }, (error) => {
+                    if (error) {
+                        console.error('Error sending message:', error);
+                        alert('Failed to send message. Check console.');
+                    }
                 });
 
                 messageInput.value = '';
                 clearTypingStatus();
             } catch (err) {
                 console.error('Error sending message:', err);
-                alert('Failed to send message. Check console.');
             }
         }
 
@@ -164,9 +166,9 @@ document.addEventListener('DOMContentLoaded', () => {
             reader.onload = (event) => {
                 try {
                     const base64 = event.target.result;
-                    const messagesRef = window.ref(window.database, 'messages');
-
-                    window.push(messagesRef, {
+                    const db = window.database;
+                    
+                    db.ref('messages').push({
                         username: username,
                         text: '📷 Shared an image',
                         timestamp: Date.now(),
@@ -224,8 +226,8 @@ document.addEventListener('DOMContentLoaded', () => {
             clearTimeout(typingTimeout);
             
             try {
-                const typingRef = window.ref(window.database, `typing/${userId}`);
-                window.firebaseUpdate(typingRef, { 
+                const db = window.database;
+                db.ref(`typing/${userId}`).set({ 
                     username: username, 
                     timestamp: Date.now(),
                     userId: userId
@@ -242,8 +244,8 @@ document.addEventListener('DOMContentLoaded', () => {
         function clearTypingStatus() {
             clearTimeout(typingTimeout);
             try {
-                const typingRef = window.ref(window.database, `typing/${userId}`);
-                window.firebaseUpdate(typingRef, null);
+                const db = window.database;
+                db.ref(`typing/${userId}`).remove();
             } catch (e) {
                 console.error('Error clearing typing status:', e);
             }
@@ -251,27 +253,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
         function setupOnlineStatus() {
             try {
-                const userRef = window.ref(window.database, `online/${userId}`);
-                window.firebaseUpdate(userRef, {
+                const db = window.database;
+                const userRef = db.ref(`online/${userId}`);
+                
+                userRef.set({
                     username: username,
                     timestamp: Date.now()
                 });
 
                 window.addEventListener('beforeunload', () => {
                     try {
-                        window.firebaseUpdate(userRef, null);
+                        userRef.remove();
                         clearTypingStatus();
                     } catch (e) {}
                 });
 
                 // Listen to online users
-                const onlineRef = window.ref(window.database, 'online');
-                window.onChildAdded(onlineRef, (snapshot) => {
+                const onlineRef = db.ref('online');
+                onlineRef.on('child_added', (snapshot) => {
                     onlineUsers.add(snapshot.key);
                     updateOnlineCount();
                 });
 
-                window.onChildRemoved(onlineRef, (snapshot) => {
+                onlineRef.on('child_removed', (snapshot) => {
                     onlineUsers.delete(snapshot.key);
                     updateOnlineCount();
                 });
@@ -289,8 +293,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         function listenForMessages() {
             try {
-                const messagesRef = window.ref(window.database, 'messages');
-                window.onChildAdded(messagesRef, (snapshot) => {
+                const db = window.database;
+                
+                // Listen for messages
+                const messagesRef = db.ref('messages');
+                messagesRef.on('child_added', (snapshot) => {
                     const message = snapshot.val();
                     if (message) {
                         displayMessage(message);
@@ -298,16 +305,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
 
                 // Listen for typing
-                const typingRef = window.ref(window.database, 'typing');
+                const typingRef = db.ref('typing');
                 
-                window.onChildAdded(typingRef, (snapshot) => {
+                typingRef.on('child_added', (snapshot) => {
                     if (snapshot.key !== userId) {
                         typingUsers.add(snapshot.key);
                         updateTypingIndicator();
                     }
                 });
 
-                window.onChildRemoved(typingRef, (snapshot) => {
+                typingRef.on('child_removed', (snapshot) => {
                     typingUsers.delete(snapshot.key);
                     updateTypingIndicator();
                 });
