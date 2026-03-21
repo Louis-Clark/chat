@@ -85,9 +85,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         messageInput.addEventListener('input', handleTyping);
 
+        const resetSessionBtn = document.getElementById('reset-session');
+
         // Event Listeners - Controls
         themeToggle.addEventListener('click', toggleTheme);
         clearChatBtn.addEventListener('click', clearChat);
+        resetSessionBtn.addEventListener('click', resetSession);
         emojiBtn.addEventListener('click', () => {
             // Focus on message input to show emoji keyboard
             messageInput.focus();
@@ -421,6 +424,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (confirm('Are you sure you want to clear all messages?')) {
                 chatMessages.innerHTML = '';
             }
+        }
+
+        function resetSession() {
+            if (!confirm('Reset local data and reconnect?')) return;
+            localStorage.removeItem('username');
+            localStorage.removeItem('userColor');
+            localStorage.removeItem('darkMode');
+            localStorage.removeItem('userId');
+            location.reload();
         }
 
         function generateAvatar(name) {
