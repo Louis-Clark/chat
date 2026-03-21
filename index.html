@@ -8,20 +8,18 @@
     <!-- Firebase SDK -->
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js';
-        import { getDatabase, ref, push, onChildAdded } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js';
+        import { getDatabase, ref, push, onChildAdded, onChildRemoved, update } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js';
 
-        // Firebase configuration - REPLACE WITH YOUR OWN
         const firebaseConfig = {
-              apiKey: "AIzaSyCprAoKDodLuhCkv7j7HWWIGCfceC88Kls",
+            apiKey: "AIzaSyCprAoKDodLuhCkv7j7HWWIGCfceC88Kls",
             authDomain: "chat-8f390.firebaseapp.com",
             databaseURL: "https://chat-8f390-default-rtdb.firebaseio.com",
-             projectId: "chat-8f390",
+            projectId: "chat-8f390",
             storageBucket: "chat-8f390.firebasestorage.app",
             messagingSenderId: "419574515896",
             appId: "1:419574515896:web:5d48b44ad7653c6be14c4d"
         };
 
-        // Initialize Firebase
         const app = initializeApp(firebaseConfig);
         const database = getDatabase(app);
 
@@ -30,21 +28,84 @@
         window.ref = ref;
         window.push = push;
         window.onChildAdded = onChildAdded;
+        window.onChildRemoved = onChildRemoved;
+        window.firebaseUpdate = update;
     </script>
+    <!-- Emoji Picker -->
+    <link href="https://cdn.jsdelivr.net/npm/emoji-picker-element@1.0.0" rel="stylesheet">
+    <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@1.0.0"></script>
 </head>
 <body>
-    <div class="container">
-        <h1>Real-time Chat</h1>
-        <div id="chat-messages"></div>
-        <div class="input-container">
-            <input type="text" id="message-input" placeholder="Type your message...">
-            <button id="send-button">Send</button>
+    <div class="app">
+        <!-- Setup Screen -->
+        <div id="setup-screen" class="setup-screen">
+            <div class="setup-card">
+                <h1>🎯 Chat Room</h1>
+                <div class="form-group">
+                    <input type="text" id="username-input" class="username-input" placeholder="Enter your username" maxlength="20">
+                </div>
+                <div class="color-selector">
+                    <label>Choose your color:</label>
+                    <div class="color-options">
+                        <button class="color-btn" data-color="#FF6B6B" style="background-color: #FF6B6B;"></button>
+                        <button class="color-btn" data-color="#4ECDC4" style="background-color: #4ECDC4;"></button>
+                        <button class="color-btn" data-color="#45B7D1" style="background-color: #45B7D1;"></button>
+                        <button class="color-btn" data-color="#FFA07A" style="background-color: #FFA07A;"></button>
+                        <button class="color-btn" data-color="#98D8C8" style="background-color: #98D8C8;"></button>
+                        <button class="color-btn selected" data-color="#6C5CE7" style="background-color: #6C5CE7;"></button>
+                    </div>
+                </div>
+                <button id="enter-chat" class="btn btn-primary">Enter Chat</button>
+            </div>
         </div>
-        <div class="username-container">
-            <input type="text" id="username-input" placeholder="Enter your username">
-            <button id="set-username">Set Username</button>
+
+        <!-- Chat Screen -->
+        <div id="chat-screen" class="chat-screen hidden">
+            <div class="chat-header">
+                <div class="header-content">
+                    <h1>💬 Chat</h1>
+                    <div class="user-info">
+                        <span id="current-user" class="username-display"></span>
+                        <div class="online-indicator"></div>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <button id="theme-toggle" class="btn-icon" title="Toggle theme">🌙</button>
+                    <button id="clear-chat" class="btn-icon" title="Clear chat history">🗑️</button>
+                </div>
+            </div>
+
+            <div class="online-users-container">
+                <div id="online-users" class="online-users">
+                    <span class="online-count">Online: 1</span>
+                </div>
+            </div>
+
+            <div id="chat-messages" class="chat-messages"></div>
+
+            <div id="typing-indicator" class="typing-indicator hidden">
+                <span>Someone is typing</span>
+                <div class="typing-dots">
+                    <div></div>
+                    <div></div>
+                    <div></div>
+                </div>
+            </div>
+
+            <div class="input-area">
+                <div class="input-controls">
+                    <button id="emoji-btn" class="btn-icon" title="Add emoji">😊</button>
+                    <button id="image-btn" class="btn-icon" title="Add image/GIF">🖼️</button>
+                    <input type="file" id="image-input" class="hidden" accept="image/*">
+                </div>
+                <input type="text" id="message-input" class="message-input" placeholder="Type a message...">
+                <button id="send-button" class="btn btn-send">Send</button>
+            </div>
+
+            <emoji-picker id="emoji-picker" class="emoji-picker hidden"></emoji-picker>
         </div>
     </div>
+
     <script src="script.js"></script>
 </body>
 </html>
