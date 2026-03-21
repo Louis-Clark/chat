@@ -69,34 +69,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Event Listeners - Setup
-        enterChatBtn.addEventListener('click', enterChat);
-        usernameInput.addEventListener('keypress', (e) => {
+        if (enterChatBtn) enterChatBtn.addEventListener('click', enterChat);
+        if (usernameInput) usernameInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') enterChat();
         });
 
         // Event Listeners - Chat
-        sendButton.addEventListener('click', sendMessage);
-        messageInput.addEventListener('keypress', (e) => {
+        if (sendButton) sendButton.addEventListener('click', sendMessage);
+        if (messageInput) messageInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage();
             }
         });
 
-        messageInput.addEventListener('input', handleTyping);
+        if (messageInput) messageInput.addEventListener('input', handleTyping);
 
         const resetSessionBtn = document.getElementById('reset-session');
 
         // Event Listeners - Controls
-        themeToggle.addEventListener('click', toggleTheme);
-        clearChatBtn.addEventListener('click', clearChat);
-        resetSessionBtn.addEventListener('click', resetSession);
-        emojiBtn.addEventListener('click', () => {
+        if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
+        if (clearChatBtn) clearChatBtn.addEventListener('click', clearChat);
+        if (resetSessionBtn) resetSessionBtn.addEventListener('click', resetSession);
+        if (emojiBtn) emojiBtn.addEventListener('click', () => {
             // Focus on message input to show emoji keyboard
             messageInput.focus();
         });
-        mediaBtn.addEventListener('click', () => mediaInput.click());
-        mediaInput.addEventListener('change', handleMediaUpload);
+        if (mediaBtn) mediaBtn.addEventListener('click', () => mediaInput.click());
+        if (mediaInput) mediaInput.addEventListener('change', handleMediaUpload);
 
         // Color selectors
         colorButtons.forEach(btn => {
@@ -109,18 +109,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 userColor = btn.dataset.color;
                 localStorage.setItem('userColor', userColor);
             });
-        });
-
-        // Emoji Picker removed - use emoji keyboard instead
-        emojiBtn.addEventListener('click', () => {
-            // Open system emoji picker (works on most devices)
-            messageInput.focus();
-            const emojiMenu = document.createElement('div');
-            emojiMenu.style.position = 'absolute';
-            emojiMenu.style.bottom = '100px';
-            emojiMenu.style.right = '20px';
-            emojiMenu.style.zIndex = '9999';
-            emojiPicker.classList.add('hidden'); // Hide in case it exists
         });
 
         // ========== FUNCTIONS ==========
