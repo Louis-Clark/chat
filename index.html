@@ -5,11 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Real-time Chat</title>
     <link rel="stylesheet" href="style.css">
-    <!-- Firebase SDK -->
+    <!-- Cloudinary Upload Widget -->
+    <script src="https://upload-widget.cloudinary.com/latest/CloudinaryUploadWidget.js"></script>
+    <!-- Firebase SDK (Database only) -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
+
+
     <script>
+        // Cloudinary configuration
+        window.CLOUDINARY_CLOUD_NAME = 'diaz0pbbc';
+        window.CLOUDINARY_UPLOAD_PRESET = 'chat_app';
+
         const firebaseConfig = {
             apiKey: "AIzaSyCprAoKDodLuhCkv7j7HWWIGCfceC88Kls",
             authDomain: "chat-8f390.firebaseapp.com",
@@ -23,18 +30,8 @@
         try {
             firebase.initializeApp(firebaseConfig);
             window.database = firebase.database();
-            console.log('✅ Firebase Database initialized:', !!window.database);
-            
-            try {
-                window.storage = firebase.storage();
-                console.log('✅ Firebase Storage initialized:', !!window.storage);
-            } catch (storageErr) {
-                console.error('❌ Storage initialization failed:', storageErr);
-                window.storage = null;
-            }
-            
+            console.log('✅ Firebase Database initialized');
             window.firebaseReady = true;
-            console.log('✅ Firebase initialized successfully');
         } catch (err) {
             console.error('❌ Firebase initialization error:', err);
             window.firebaseReady = false;
