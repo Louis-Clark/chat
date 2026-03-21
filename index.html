@@ -20,11 +20,25 @@
             appId: "1:419574515896:web:5d48b44ad7653c6be14c4d"
         };
 
-        firebase.initializeApp(firebaseConfig);
-        window.database = firebase.database();
-        window.storage = firebase.storage();
-        window.firebaseReady = true;
-        console.log('✅ Firebase initialized successfully');
+        try {
+            firebase.initializeApp(firebaseConfig);
+            window.database = firebase.database();
+            console.log('✅ Firebase Database initialized:', !!window.database);
+            
+            try {
+                window.storage = firebase.storage();
+                console.log('✅ Firebase Storage initialized:', !!window.storage);
+            } catch (storageErr) {
+                console.error('❌ Storage initialization failed:', storageErr);
+                window.storage = null;
+            }
+            
+            window.firebaseReady = true;
+            console.log('✅ Firebase initialized successfully');
+        } catch (err) {
+            console.error('❌ Firebase initialization error:', err);
+            window.firebaseReady = false;
+        }
     </script>
     <!-- Emoji Picker is removed due to MIME type issues -->
     <!-- Using text-based emoji input instead -->

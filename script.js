@@ -224,7 +224,10 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const storage = window.storage;
                 if (!storage) {
-                    alert('Storage not available');
+                    console.error('Storage not initialized. Firebase Storage SDK may not have loaded.');
+                    console.log('window.storage:', window.storage);
+                    console.log('firebase:', typeof firebase);
+                    alert('Cloud Storage is not available. Check your Firebase setup and ensure the storageBucket is configured in your Firebase project.');
                     return;
                 }
 
