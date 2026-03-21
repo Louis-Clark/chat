@@ -1,9 +1,12 @@
 // Advanced Chat Application Script
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('📱 Chat app starting...');
+    
     // Wait for Firebase to be ready
     const waitForFirebase = setInterval(() => {
         if (window.firebaseReady && window.database) {
             clearInterval(waitForFirebase);
+            console.log('✅ Firebase ready, initializing app...');
             initializeApp();
         }
     }, 100);
@@ -11,7 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Failsafe: initialize after 5 seconds even if not ready
     setTimeout(() => {
         if (!window.firebaseReady) {
-            console.log('Firebase timeout, initializing anyway');
+            console.log('⚠️ Firebase timeout, initializing anyway');
             window.database = window.database || {};
             initializeApp();
         }
@@ -49,6 +52,8 @@ document.addEventListener('DOMContentLoaded', () => {
         let onlineUsers = new Set();
         let typingUsers = new Set();
         let isInitialized = false;
+
+        console.log('💾 User ID:', userId);
 
         // Initialize theme
         if (isDarkMode) {
@@ -138,10 +143,12 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.setItem('userColor', userColor);
             
             try {
+                console.log('👤 User entering chat:', username);
                 showChatScreen();
                 setupOnlineStatus();
                 listenForMessages();
                 isInitialized = true;
+                console.log('✅ Chat ready!');
             } catch (err) {
                 console.error('Error entering chat:', err);
                 alert('Error entering chat: ' + err.message);
@@ -158,28 +165,44 @@ document.addEventListener('DOMContentLoaded', () => {
 
         function sendMessage() {
             const text = messageInput.value.trim();
-            if (!text || !isInitialized) return;
+            if (!text || !isInitialized) {
+                console.log('Cannot send message - text empty or not initialized');
+                return;
+            }
 
             try {
                 const db = window.database;
-                db.ref('messages').push({
+                if (!db) {
+                    alert('Database not connected');
+                    return;
+                }
+
+                console.log('📤 Sending message:', text);
+                
+                const messageData = {
                     username: username,
                     text: text,
                     timestamp: Date.now(),
                     userId: userId,
                     userColor: userColor,
                     isImage: false
-                }, (error) => {
+                };
+
+                db.ref('messages').push(messageData, function(error) {
                     if (error) {
-                        console.error('Error sending message:', error);
-                        alert('Failed to send message. Check console.');
+                        console.error('❌ Error sending message:', error);
+                        console.error('Error code:', error.code);
+                        console.error('Error message:', error.message);
+                        alert('Failed to send message: ' + error.message);
+                    } else {
+                        console.log('✅ Message sent successfully');
+                        messageInput.value = '';
+                        clearTypingStatus();
                     }
                 });
-
-                messageInput.value = '';
-                clearTypingStatus();
             } catch (err) {
-                console.error('Error sending message:', err);
+                console.error('Exception sending message:', err);
+                alert('Exception: ' + err.message);
             }
         }
 
@@ -256,6 +279,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     username: username, 
                     timestamp: Date.now(),
                     userId: userId
+                }, function(error) {
+                    if (error) {
+                        console.error('Error setting typing status:', error);
+                    } else {
+                        console.log('✏️ Typing indicator set');
+                    }
                 });
             } catch (err) {
                 console.error('Error updating typing status:', err);
@@ -270,7 +299,11 @@ document.addEventListener('DOMContentLoaded', () => {
             clearTimeout(typingTimeout);
             try {
                 const db = window.database;
-                db.ref(`typing/${userId}`).remove();
+                db.ref(`typing/${userId}`).remove(function(error) {
+                    if (error) {
+                        console.error('Error clearing typing:', error);
+                    }
+                });
             } catch (e) {
                 console.error('Error clearing typing status:', e);
             }
@@ -284,6 +317,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 userRef.set({
                     username: username,
                     timestamp: Date.now()
+                }, function(error) {
+                    if (error) {
+                        console.error('Error setting online status:', error);
+                    } else {
+                        console.log('🟢 Online status set');
+                    }
                 });
 
                 window.addEventListener('beforeunload', () => {
@@ -298,11 +337,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 onlineRef.on('child_added', (snapshot) => {
                     onlineUsers.add(snapshot.key);
                     updateOnlineCount();
+                    console.log('👤 User online:', snapshot.key);
                 });
 
                 onlineRef.on('child_removed', (snapshot) => {
                     onlineUsers.delete(snapshot.key);
                     updateOnlineCount();
+                    console.log('👤 User offline:', snapshot.key);
                 });
             } catch (err) {
                 console.error('Error setting up online status:', err);
@@ -313,6 +354,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const onlineCount = document.querySelector('.online-count');
             if (onlineCount) {
                 onlineCount.textContent = `Online: ${onlineUsers.size}`;
+                console.log('👥 Online count:', onlineUsers.size);
             }
         }
 
@@ -324,10 +366,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const messagesRef = db.ref('messages');
                 messagesRef.on('child_added', (snapshot) => {
                     const message = snapshot.val();
+                    console.log('💬 New message received:', message);
                     if (message) {
                         displayMessage(message);
                     }
                 });
+
+                console.log('👂 Message listener set up');
 
                 // Listen for typing
                 const typingRef = db.ref('typing');
@@ -336,13 +381,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (snapshot.key !== userId) {
                         typingUsers.add(snapshot.key);
                         updateTypingIndicator();
+                        console.log('✏️ User typing:', snapshot.key);
                     }
                 });
 
                 typingRef.on('child_removed', (snapshot) => {
                     typingUsers.delete(snapshot.key);
                     updateTypingIndicator();
+                    console.log('⏹️ User stopped typing:', snapshot.key);
                 });
+
+                console.log('👂 Typing listener set up');
             } catch (err) {
                 console.error('Error setting up listeners:', err);
             }
@@ -351,8 +400,10 @@ document.addEventListener('DOMContentLoaded', () => {
         function updateTypingIndicator() {
             if (typingUsers.size > 0) {
                 typingIndicator.classList.remove('hidden');
+                console.log('👁️ Showing typing indicator');
             } else {
                 typingIndicator.classList.add('hidden');
+                console.log('👁️ Hiding typing indicator');
             }
         }
 
