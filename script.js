@@ -63,6 +63,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (username) {
             showChatScreen();
+            setupOnlineStatus();
+            listenForMessages();
+            isInitialized = true;
         }
 
         // Event Listeners - Setup
