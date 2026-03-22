@@ -395,6 +395,22 @@ body {
     white-space: pre-wrap;
 }
 
+/* Mention highlighting */
+.mention {
+    background-color: #fff3cd;
+    color: #856404;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-weight: bold;
+    border: 1px solid #ffeaa7;
+}
+
+.dark .mention {
+    background-color: #4a3c1d;
+    color: #ffdd57;
+    border-color: #7c6c3a;
+}
+
 /* Typing Indicator */
 .typing-indicator {
     display: flex;

@@ -406,10 +406,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else if (message.mediaType === 'audio') {
                     content += `<audio controls class="message-audio"><source src="${message.mediaUrl}" type="audio/mpeg">Your browser does not support audio playback.</audio>`;
                 } else {
-                    content += `<div class="message-text">${linkifyText(escapeHtml(message.text))}</div>`;
+                    const { processedText } = processMentions(message.text);
+                    content += `<div class="message-text">${linkifyText(escapeHtml(processedText))}</div>`;
                 }
             } else {
-                content += `<div class="message-text">${linkifyText(escapeHtml(message.text))}</div>`;
+                const { processedText, hasMention, mentionedUsers } = processMentions(message.text);
+                content += `<div class="message-text">${linkifyText(escapeHtml(processedText))}</div>`;
+                
+                // Store mention info for sound playing
+                messageDiv.dataset.hasMention = hasMention;
+                messageDiv.dataset.mentionedUsers = JSON.stringify(mentionedUsers);
             }
 
             content += `</div>`;
@@ -419,7 +425,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Play notification sound for messages from other users
             if (message.userId !== userId) {
-                playNotificationSound();
+                const hasMention = messageDiv.dataset.hasMention === 'true';
+                const mentionedUsers = JSON.parse(messageDiv.dataset.mentionedUsers || '[]');
+                const userMentioned = isUserMentioned(mentionedUsers);
+                
+                if (userMentioned) {
+                    playMentionSound();
+                } else {
+                    playNotificationSound();
+                }
             }
 
             if (atBottom) {
@@ -613,6 +627,60 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Fallback: try to play a simple beep if Web Audio API fails
                 console.log('Web Audio API not available, skipping notification sound');
             }
+        }
+
+        function playMentionSound() {
+            if (!soundEnabled) return;
+            
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                // Create a louder, more attention-grabbing mention sound
+                oscillator.frequency.setValueAtTime(1000, audioContext.currentTime);
+                oscillator.frequency.setValueAtTime(1200, audioContext.currentTime + 0.1);
+                oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.2);
+                
+                gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+                
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.5);
+            } catch (e) {
+                // Fallback: try to play a simple beep if Web Audio API fails
+                console.log('Web Audio API not available, skipping mention sound');
+            }
+        }
+
+        function processMentions(text) {
+            if (!text) return { processedText: text, hasMention: false, mentionedUsers: [] };
+            
+            const mentionRegex = /@(\w+)/g;
+            const mentionedUsers = [];
+            let hasMention = false;
+            
+            // Find all mentions in the text
+            let match;
+            while ((match = mentionRegex.exec(text)) !== null) {
+                const mentionedUsername = match[1];
+                mentionedUsers.push(mentionedUsername);
+                hasMention = true;
+            }
+            
+            // Highlight mentions in the text
+            const processedText = text.replace(mentionRegex, (match, username) => {
+                return `<span class="mention">@${username}</span>`;
+            });
+            
+            return { processedText, hasMention, mentionedUsers };
+        }
+
+        function isUserMentioned(mentionedUsers) {
+            return mentionedUsers.some(mentionedUsername => mentionedUsername.toLowerCase() === username.toLowerCase());
         }
 
         function generateAvatar(name) {
