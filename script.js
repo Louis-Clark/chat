@@ -1,6 +1,10 @@
 // Advanced Chat Application Script
 document.addEventListener('DOMContentLoaded', () => {
     console.log('📱 Chat app starting...');
+    
+    // YouTube Player instances cache
+    window.youtubePlayers = new Map();
+    
     initializeApp();
 
     function initializeApp() {
@@ -37,7 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let isDarkMode = localStorage.getItem('darkMode') === 'true';
         let soundEnabled = localStorage.getItem('soundEnabled') !== 'false';
         let currentReply = null;
-        let currentEdit = null; // Track message being edited
+        let currentEdit = null;
         let typingTimeout;
         let mediaRecorder = null;
         let audioChunks = [];
@@ -179,7 +183,295 @@ document.addEventListener('DOMContentLoaded', () => {
         // Store messages data for reference
         let messagesCache = new Map();
 
-        // ========== FUNCTIONS ==========
+        // ========== LOAD YOUTUBE IFrame API ==========
+        function loadYouTubeAPI() {
+            if (window.YT && window.YT.Player) {
+                console.log('✅ YouTube API already loaded');
+                return Promise.resolve();
+            }
+            
+            return new Promise((resolve, reject) => {
+                const tag = document.createElement('script');
+                tag.src = 'https://www.youtube.com/iframe_api';
+                const firstScriptTag = document.getElementsByTagName('script')[0];
+                firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+                
+                window.onYouTubeIframeAPIReady = () => {
+                    console.log('✅ YouTube IFrame API ready');
+                    resolve();
+                };
+                
+                // Timeout after 10 seconds
+                setTimeout(() => {
+                    if (!window.YT) {
+                        reject(new Error('YouTube API load timeout'));
+                    }
+                }, 10000);
+            });
+        }
+
+        // Call this when chat starts
+        loadYouTubeAPI().catch(err => console.warn('YouTube API load failed:', err));
+
+        // ========== IMPROVED LINK PREVIEW FUNCTIONS WITH YOUTUBE API ==========
+
+        function extractYouTubeId(url) {
+            if (!url) return null;
+            
+            const patterns = [
+                /(?:youtube\.com\/watch\?v=)([\w-]+)/i,
+                /(?:youtube\.com\/embed\/)([\w-]+)/i,
+                /(?:youtube\.com\/v\/)([\w-]+)/i,
+                /(?:youtube\.com\/live\/)([\w-]+)/i,
+                /(?:youtu\.be\/)([\w-]+)/i,
+                /(?:youtube\.com\/shorts\/)([\w-]+)/i,
+                /(?:youtube\.com\/watch\?.*v=)([\w-]+)/i
+            ];
+            
+            for (const pattern of patterns) {
+                const match = url.match(pattern);
+                if (match && match[1]) {
+                    console.log('🎯 YouTube ID extracted:', match[1], 'from URL:', url);
+                    return match[1];
+                }
+            }
+            
+            return null;
+        }
+
+        // NEW FUNCTION: Extract direct image URL from search result URLs (Bing, Google, etc.)
+        function extractDirectImageUrl(url) {
+            if (!url) return null;
+            
+            // Try to extract mediaurl parameter from Bing URLs
+            const bingMatch = url.match(/[?&]mediaurl=([^&]+)/i);
+            if (bingMatch) {
+                const decodedUrl = decodeURIComponent(bingMatch[1]);
+                console.log('🔍 Extracted Bing image URL:', decodedUrl);
+                return decodedUrl;
+            }
+            
+            // Try to extract imgurl parameter from Google Images
+            const googleMatch = url.match(/[?&]imgurl=([^&]+)/i);
+            if (googleMatch) {
+                const decodedUrl = decodeURIComponent(googleMatch[1]);
+                console.log('🔍 Extracted Google image URL:', decodedUrl);
+                return decodedUrl;
+            }
+            
+            // Try to extract imgurl parameter from other image search engines
+            const imgurMatch = url.match(/[?&]imgurl=([^&]+)/i);
+            if (imgurMatch) {
+                const decodedUrl = decodeURIComponent(imgurMatch[1]);
+                console.log('🔍 Extracted image URL:', decodedUrl);
+                return decodedUrl;
+            }
+            
+            // Try to extract direct image URL from common patterns
+            const directImageMatch = url.match(/(https?:\/\/[^\s]+?\.(jpg|jpeg|png|gif|webp|bmp|svg))/i);
+            if (directImageMatch && !url.includes('bing.com') && !url.includes('google.com')) {
+                console.log('🔍 Extracted direct image URL:', directImageMatch[1]);
+                return directImageMatch[1];
+            }
+            
+            return null;
+        }
+
+        function detectAndProcessLinks(text) {
+            if (!text) return { processedText: text, mediaEmbed: null };
+            
+            const urlRegex = /(https?:\/\/[^\s]+)/g;
+            const matches = text.match(urlRegex);
+            
+            if (matches) {
+                for (const url of matches) {
+                    // Check for YouTube
+                    const videoId = extractYouTubeId(url);
+                    if (videoId) {
+                        let processedText = text.replace(url, '').trim();
+                        if (!processedText) {
+                            processedText = '📺 Shared a YouTube video';
+                        }
+                        
+                        console.log('🎬 YouTube video detected:', videoId);
+                        
+                        return {
+                            processedText: processedText,
+                            mediaEmbed: {
+                                type: 'youtube',
+                                videoId: videoId,
+                                originalUrl: url
+                            }
+                        };
+                    }
+                    
+                    // NEW: Extract direct image URL from search result URLs (Bing, Google, etc.)
+                    const directImageUrl = extractDirectImageUrl(url);
+                    if (directImageUrl) {
+                        let processedText = text.replace(url, '').trim();
+                        if (!processedText) {
+                            processedText = '🖼️ Shared an image';
+                        }
+                        
+                        console.log('🖼️ Image detected from search URL:', directImageUrl);
+                        
+                        return {
+                            processedText: processedText,
+                            mediaEmbed: {
+                                type: 'image',
+                                url: directImageUrl
+                            }
+                        };
+                    }
+                    
+                    // Check for direct image/GIF links (URL ends with image extension)
+                    if (url.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i)) {
+                        let processedText = text.replace(url, '').trim();
+                        if (!processedText) {
+                            processedText = '🖼️ Shared an image';
+                        }
+                        
+                        console.log('🖼️ Direct image detected:', url);
+                        
+                        return {
+                            processedText: processedText,
+                            mediaEmbed: {
+                                type: 'image',
+                                url: url
+                            }
+                        };
+                    }
+                }
+            }
+            
+            return { processedText: text, mediaEmbed: null };
+        }
+
+        function createYouTubePlayer(containerId, videoId, messageId) {
+            if (!window.YT || !window.YT.Player) {
+                console.log('⏳ YouTube API not ready, loading...');
+                loadYouTubeAPI().then(() => {
+                    createYouTubePlayer(containerId, videoId, messageId);
+                }).catch(err => {
+                    console.error('Failed to load YouTube API:', err);
+                    const container = document.getElementById(containerId);
+                    if (container) {
+                        container.innerHTML = '<div style="padding: 20px; text-align: center; color: #ff4444;">❌ Failed to load YouTube player</div>';
+                    }
+                });
+                return;
+            }
+            
+            // Check if player already exists for this message
+            if (window.youtubePlayers.has(messageId)) {
+                return;
+            }
+            
+            try {
+                const player = new YT.Player(containerId, {
+                    height: '100%',
+                    width: '100%',
+                    videoId: videoId,
+                    playerVars: {
+                        'playsinline': 1,
+                        'modestbranding': 1,
+                        'rel': 0,
+                        'controls': 1,
+                        'origin': window.location.origin,
+                        'enablejsapi': 1
+                    },
+                    events: {
+                        'onReady': (event) => {
+                            console.log(`🎬 YouTube player ready for message ${messageId}`);
+                        },
+                        'onStateChange': (event) => {
+                            console.log(`YouTube player state changed: ${event.data}`);
+                        },
+                        'onError': (event) => {
+                            console.error(`YouTube player error: ${event.data}`);
+                            const container = document.getElementById(containerId);
+                            if (container) {
+                                let errorMessage = 'Unable to play video';
+                                if (event.data === 2) {
+                                    errorMessage = 'Invalid video ID';
+                                } else if (event.data === 100) {
+                                    errorMessage = 'Video not found';
+                                } else if (event.data === 101 || event.data === 150) {
+                                    errorMessage = 'Video cannot be played in embedded player';
+                                }
+                                container.innerHTML = `<div style="padding: 20px; text-align: center; color: #ff4444;">❌ ${errorMessage}</div>`;
+                            }
+                        }
+                    }
+                });
+                
+                window.youtubePlayers.set(messageId, player);
+                console.log(`✅ YouTube player created for message ${messageId}`);
+            } catch (err) {
+                console.error('Error creating YouTube player:', err);
+                const container = document.getElementById(containerId);
+                if (container) {
+                    container.innerHTML = '<div style="padding: 20px; text-align: center; color: #ff4444;">❌ Failed to create YouTube player</div>';
+                }
+            }
+        }
+
+        function createMediaEmbed(embedData, messageId) {
+            if (!embedData) return '';
+            
+            switch (embedData.type) {
+                case 'youtube':
+                    const videoId = embedData.videoId;
+                    if (!videoId) return '<div class="embed-error" style="padding: 8px; background: rgba(255,0,0,0.1); border-radius: 8px; color: #ff4444; margin-top: 8px;">❌ Invalid YouTube URL</div>';
+                    
+                    const containerId = `youtube-container-${messageId}`;
+                    
+                    // Store the container ID for later initialization
+                    setTimeout(() => {
+                        createYouTubePlayer(containerId, videoId, messageId);
+                    }, 100);
+                    
+                    return `
+                        <div class="media-embed youtube-embed" style="margin: 8px 0; position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 12px; background: #000;">
+                            <div id="${containerId}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></div>
+                        </div>
+                    `;
+                case 'image':
+                    return `
+                        <div class="media-embed image-embed" style="margin: 8px 0;">
+                            <img 
+                                src="${embedData.url}" 
+                                alt="Shared image" 
+                                style="max-width: 100%; max-height: 400px; border-radius: 12px; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: transform 0.2s ease;" 
+                                loading="lazy" 
+                                onclick="window.open('${embedData.url}', '_blank')"
+                                onerror="this.style.display='none'; this.parentElement.innerHTML='<div style=\\'padding: 8px; background: rgba(255,0,0,0.1); border-radius: 8px; color: #ff4444;\\'>❌ Failed to load image</div>'"
+                            >
+                        </div>
+                    `;
+                default:
+                    return '';
+            }
+        }
+
+        function linkifyAndProcessText(text) {
+            if (!text) return '';
+            
+            const urlRegex = /(https?:\/\/[^\s]+)/g;
+            const linkedText = text.replace(urlRegex, (url) => {
+                // Skip YouTube URLs, image URLs, and search URLs that contain images
+                if (extractYouTubeId(url) || 
+                    url.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i) ||
+                    extractDirectImageUrl(url)) {
+                    return '';
+                }
+                return `<a href="${url}" target="_blank" style="color: var(--accent-color); text-decoration: underline;" rel="noopener noreferrer">${url}</a>`;
+            });
+            
+            return linkedText;
+        }
+
+        // ========== EXISTING FUNCTIONS ==========
 
         function generateUserId() {
             const id = 'user_' + Math.random().toString(36).substr(2, 9);
@@ -227,6 +519,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 listenForMessages();
                 isInitialized = true;
                 console.log('✅ Chat ready!');
+                
+                // Preload YouTube API
+                loadYouTubeAPI().catch(err => console.warn('YouTube API preload failed:', err));
             } catch (err) {
                 console.error('Error entering chat:', err);
                 alert('Error entering chat: ' + err.message);
@@ -263,9 +558,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 sendButton.disabled = true;
                 sendButton.textContent = '⏳';
 
+                const { processedText, mediaEmbed } = detectAndProcessLinks(text);
+                
+                console.log('📝 Processed message:', { originalText: text, processedText, mediaEmbed });
+
                 const messageData = {
                     username: username,
-                    text: text,
+                    text: processedText,
+                    originalText: text,
                     timestamp: Date.now(),
                     userId: userId,
                     userColor: userColor,
@@ -276,7 +576,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     } : null,
                     isDeleted: false,
                     isEdited: false,
-                    editHistory: []
+                    editHistory: [],
+                    mediaEmbed: mediaEmbed
                 };
 
                 db.ref('messages').push(messageData, function(error) {
@@ -305,7 +606,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function startEdit(messageId, currentText, messageElement) {
-            // Cancel any ongoing reply
             if (currentReply) {
                 cancelReply();
             }
@@ -316,17 +616,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 element: messageElement
             };
             
-            // Set the message input to the current text
             messageInput.value = currentText;
             messageInput.focus();
-            
-            // Update send button text
             sendButton.textContent = '✏️ Update';
-            
-            // Show edit preview
             updateEditPreview();
             
-            // Highlight the message being edited
             messageElement.style.transition = 'background-color 0.3s';
             messageElement.style.backgroundColor = 'rgba(108, 92, 231, 0.2)';
         }
@@ -348,7 +642,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 `;
 
-                // Add cancel handler
                 const cancelBtn = previewDiv.querySelector('.cancel-edit');
                 if (cancelBtn) {
                     cancelBtn.addEventListener('click', (e) => {
@@ -357,7 +650,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                 }
 
-                // Insert before input area
                 const inputArea = document.querySelector('.input-area');
                 if (inputArea && inputArea.parentNode) {
                     inputArea.parentNode.insertBefore(previewDiv, inputArea);
@@ -398,16 +690,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 sendButton.disabled = true;
                 sendButton.textContent = '⏳';
                 
-                // Get the current message data
+                const { processedText, mediaEmbed } = detectAndProcessLinks(newText);
+                
                 const messageRef = db.ref(`messages/${currentEdit.id}`);
                 messageRef.once('value', (snapshot) => {
                     const messageData = snapshot.val();
                     if (messageData && messageData.userId === userId) {
-                        // Update the message
                         const updatedData = {
-                            text: newText,
+                            text: processedText,
+                            originalText: newText,
                             isEdited: true,
                             lastEdited: Date.now(),
+                            mediaEmbed: mediaEmbed,
                             editHistory: [...(messageData.editHistory || []), {
                                 text: messageData.text,
                                 timestamp: Date.now()
@@ -456,19 +750,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 messageRef.once('value', (snapshot) => {
                     const messageData = snapshot.val();
                     if (messageData && messageData.userId === userId) {
-                        // Soft delete - update the message content
+                        // Clean up YouTube player if it exists
+                        if (window.youtubePlayers.has(messageId)) {
+                            const player = window.youtubePlayers.get(messageId);
+                            if (player && player.destroy) {
+                                player.destroy();
+                            }
+                            window.youtubePlayers.delete(messageId);
+                        }
+                        
                         messageRef.update({
                             isDeleted: true,
                             text: '🗑️ This message was deleted',
                             deletedAt: Date.now(),
-                            originalText: messageData.text // Keep original for reference
+                            originalText: messageData.text,
+                            mediaEmbed: null
                         }, (error) => {
                             if (error) {
                                 console.error('Error deleting message:', error);
                                 alert('Failed to delete message: ' + error.message);
                             } else {
                                 console.log('✅ Message deleted successfully');
-                                // If we're editing this message, cancel edit
                                 if (currentEdit && currentEdit.id === messageId) {
                                     cancelEdit();
                                 }
@@ -658,9 +960,13 @@ document.addEventListener('DOMContentLoaded', () => {
         function displayMessage(message, options = {}) {
             if (!message || !chatMessages) return;
 
-            console.log('Displaying message:', message);
+            console.log('💬 Displaying message:', {
+                id: message.id,
+                text: message.text,
+                mediaEmbed: message.mediaEmbed,
+                isDeleted: message.isDeleted
+            });
 
-            // Store message data for reference
             if (message.id) {
                 storeMessageData(message.id, message);
             }
@@ -668,8 +974,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const atBottom = chatMessages.scrollHeight - chatMessages.scrollTop <= chatMessages.clientHeight + 50;
 
             const messageDiv = document.createElement('div');
+            const messageId = message.id || message.timestamp;
             messageDiv.className = `message ${message.userId === userId ? 'own' : 'other'}`;
-            messageDiv.id = `message-${message.id || message.timestamp}`;
+            messageDiv.id = `message-${messageId}`;
             messageDiv.setAttribute('data-temp-id', message.timestamp);
 
             const avatar = generateAvatar(message.username);
@@ -685,14 +992,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="message-timestamp">${timestamp}</span>
                         <div class="message-actions">`;
 
-            // Add action buttons for own messages
             if (message.userId === userId && !message.isDeleted) {
                 content += `
                     <button class="edit-btn" title="Edit message">✏️</button>
                     <button class="delete-btn" title="Delete message">🗑️</button>`;
             }
             
-            // Add reply button for all non-deleted messages
             if (!message.isDeleted) {
                 content += `<button class="reply-btn" title="Reply to this message">🗨️</button>`;
             }
@@ -700,7 +1005,6 @@ document.addEventListener('DOMContentLoaded', () => {
             content += `</div>
                     </div>`;
 
-            // Add reply display if this message is a reply
             if (message.replyTo && !message.isDeleted) {
                 content += `
                     <div class="message-reply" data-reply-id="${message.replyTo.id}" style="cursor: pointer;" title="Click to view original message">
@@ -712,18 +1016,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>`;
             }
 
-            // Handle media messages
             if (message.isMedia && !message.isDeleted) {
                 if (message.mediaType === 'image') {
-                    content += `<img src="${message.mediaUrl}" alt="Shared image" class="message-image" loading="lazy">`;
+                    content += `<img src="${message.mediaUrl}" alt="Shared image" class="message-image" loading="lazy" style="max-width: 100%; max-height: 400px; border-radius: 12px; margin-top: 8px;">`;
                 } else if (message.mediaType === 'video') {
-                    content += `<video controls class="message-video"><source src="${message.mediaUrl}" type="video/mp4">Your browser does not support video playback.</video>`;
+                    content += `<video controls class="message-video" style="max-width: 100%; border-radius: 12px; margin-top: 8px;"><source src="${message.mediaUrl}" type="video/mp4">Your browser does not support video playback.</video>`;
                 } else if (message.mediaType === 'audio') {
-                    content += `<audio controls class="message-audio"><source src="${message.mediaUrl}" type="audio/mpeg">Your browser does not support audio playback.</audio>`;
+                    content += `<audio controls class="message-audio" style="width: 100%; margin-top: 8px;"><source src="${message.mediaUrl}" type="audio/mpeg">Your browser does not support audio playback.</audio>`;
                 }
             }
 
-            // Process text content
+            if (message.mediaEmbed && !message.isDeleted) {
+                console.log('🎨 Creating media embed for:', message.mediaEmbed);
+                content += createMediaEmbed(message.mediaEmbed, messageId);
+            }
+
             let textContent = message.text;
             let editedBadge = '';
             
@@ -736,9 +1043,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 
                 const { mentionedUsers } = processMentions(textContent);
-                const escapedText = escapeHtml(textContent);
-                const linkedText = linkifyText(escapedText);
-                const highlightedText = highlightMentions(linkedText);
+                const linkedText = linkifyAndProcessText(textContent);
+                const escapedText = escapeHtml(linkedText);
+                const highlightedText = highlightMentions(escapedText);
                 content += `<div class="message-text">${highlightedText}${editedBadge}</div>`;
             }
             
@@ -747,7 +1054,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             chatMessages.appendChild(messageDiv);
 
-            // Add click handler to the reply preview
             const replyPreview = messageDiv.querySelector('.message-reply');
             if (replyPreview) {
                 replyPreview.addEventListener('click', (e) => {
@@ -759,7 +1065,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
 
-            // Play notification sound for new messages from other users (skip deleted messages)
             if (!options.skipSound && message.userId !== userId && !message.isDeleted) {
                 const { mentionedUsers } = processMentions(message.text);
                 const hasMention = isUserMentioned(mentionedUsers);
@@ -828,6 +1133,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     try {
                         if (userRef) userRef.remove();
                         clearTypingStatus();
+                        // Clean up YouTube players
+                        window.youtubePlayers.forEach((player, id) => {
+                            if (player && player.destroy) {
+                                player.destroy();
+                            }
+                        });
+                        window.youtubePlayers.clear();
                     } catch (e) {}
                 });
 
@@ -888,21 +1200,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
 
-                // Listen for message updates (edits)
                 messagesRef.on('child_changed', (snapshot) => {
                     const updatedMessage = snapshot.val();
                     updatedMessage.id = snapshot.key;
                     
-                    // Update cache
                     updateMessageInCache(snapshot.key, updatedMessage);
                     
-                    // Update the DOM
                     const messageElement = document.getElementById(`message-${snapshot.key}`);
                     if (messageElement) {
-                        // Replace with updated message
                         const wasAtBottom = chatMessages.scrollHeight - chatMessages.scrollTop <= chatMessages.clientHeight + 50;
-                        const tempDiv = document.createElement('div');
-                        tempDiv.innerHTML = '';
                         displayMessage(updatedMessage, { skipSound: true });
                         const newElement = chatMessages.lastChild;
                         messageElement.replaceWith(newElement);
@@ -953,11 +1259,25 @@ document.addEventListener('DOMContentLoaded', () => {
             if (chatMessages && confirm('Are you sure you want to clear all messages?')) {
                 chatMessages.innerHTML = '';
                 messagesCache.clear();
+                // Clean up YouTube players
+                window.youtubePlayers.forEach((player, id) => {
+                    if (player && player.destroy) {
+                        player.destroy();
+                    }
+                });
+                window.youtubePlayers.clear();
             }
         }
 
         function resetSession() {
             if (!confirm('Reset local data and reconnect?')) return;
+            // Clean up YouTube players
+            window.youtubePlayers.forEach((player, id) => {
+                if (player && player.destroy) {
+                    player.destroy();
+                }
+            });
+            window.youtubePlayers.clear();
             localStorage.removeItem('username');
             localStorage.removeItem('userColor');
             localStorage.removeItem('darkMode');
@@ -996,7 +1316,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function startReply(messageId, replyUsername, messageText, messageElement) {
-            // Cancel any ongoing edit
             if (currentEdit) {
                 cancelEdit();
             }
@@ -1012,7 +1331,6 @@ document.addEventListener('DOMContentLoaded', () => {
             updateReplyPreview();
             if (messageInput) messageInput.focus();
             
-            // Add visual feedback that you're replying
             if (messageElement) {
                 messageElement.style.transition = 'background-color 0.3s';
                 messageElement.style.backgroundColor = 'rgba(108, 92, 231, 0.2)';
@@ -1041,7 +1359,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 `;
 
-                // Make the entire preview clickable to scroll to original message
                 previewDiv.style.cursor = 'pointer';
                 previewDiv.addEventListener('click', (e) => {
                     if (e.target.classList.contains('cancel-reply')) {
@@ -1052,7 +1369,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
 
-                // Add cancel handler
                 const cancelBtn = previewDiv.querySelector('.cancel-reply');
                 if (cancelBtn) {
                     cancelBtn.addEventListener('click', (e) => {
@@ -1061,7 +1377,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                 }
 
-                // Insert before input area
                 const inputArea = document.querySelector('.input-area');
                 if (inputArea && inputArea.parentNode) {
                     inputArea.parentNode.insertBefore(previewDiv, inputArea);
@@ -1198,12 +1513,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
-        }
-
-        function linkifyText(text) {
-            if (!text) return '';
-            const urlRegex = /(https?:\/\/[^\s]+)/g;
-            return text.replace(urlRegex, '<a href="$1" target="_blank" style="color: var(--accent-color); text-decoration: underline;" rel="noopener noreferrer">$1</a>');
         }
     }
 });

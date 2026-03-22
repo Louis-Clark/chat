@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Real-time Chat</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="description" content="Real-time chat application with video and media support">
+    <title>Real-time Chat - Video & Media Support</title>
     <link rel="stylesheet" href="style.css">
     <!-- Firebase SDK (Database only) -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
@@ -32,6 +33,16 @@
         } catch (err) {
             console.error('❌ Firebase initialization error:', err);
             window.firebaseReady = false;
+            // Show error to user if Firebase fails
+            document.addEventListener('DOMContentLoaded', () => {
+                const setupScreen = document.getElementById('setup-screen');
+                if (setupScreen) {
+                    const errorDiv = document.createElement('div');
+                    errorDiv.style.cssText = 'background: rgba(255,68,68,0.2); color: #ff4444; padding: 10px; border-radius: 8px; margin-bottom: 15px; text-align: center;';
+                    errorDiv.innerHTML = '⚠️ Firebase connection error. Please refresh and try again.';
+                    setupScreen.querySelector('.setup-card').insertBefore(errorDiv, setupScreen.querySelector('.form-group'));
+                }
+            });
         }
     </script>
 </head>
@@ -42,17 +53,17 @@
             <div class="setup-card">
                 <h1>🎯 Chat Room</h1>
                 <div class="form-group">
-                    <input type="text" id="username-input" class="username-input" placeholder="Enter your username" maxlength="20">
+                    <input type="text" id="username-input" class="username-input" placeholder="Enter your username" maxlength="20" autocomplete="off">
                 </div>
                 <div class="color-selector">
                     <label>Choose your color:</label>
                     <div class="color-options">
-                        <button class="color-btn" data-color="#FF6B6B" style="background-color: #FF6B6B;"></button>
-                        <button class="color-btn" data-color="#4ECDC4" style="background-color: #4ECDC4;"></button>
-                        <button class="color-btn" data-color="#45B7D1" style="background-color: #45B7D1;"></button>
-                        <button class="color-btn" data-color="#FFA07A" style="background-color: #FFA07A;"></button>
-                        <button class="color-btn" data-color="#98D8C8" style="background-color: #98D8C8;"></button>
-                        <button class="color-btn selected" data-color="#6C5CE7" style="background-color: #6C5CE7;"></button>
+                        <button class="color-btn" data-color="#FF6B6B" style="background-color: #FF6B6B;" aria-label="Red color"></button>
+                        <button class="color-btn" data-color="#4ECDC4" style="background-color: #4ECDC4;" aria-label="Teal color"></button>
+                        <button class="color-btn" data-color="#45B7D1" style="background-color: #45B7D1;" aria-label="Blue color"></button>
+                        <button class="color-btn" data-color="#FFA07A" style="background-color: #FFA07A;" aria-label="Orange color"></button>
+                        <button class="color-btn" data-color="#98D8C8" style="background-color: #98D8C8;" aria-label="Mint color"></button>
+                        <button class="color-btn selected" data-color="#6C5CE7" style="background-color: #6C5CE7;" aria-label="Purple color"></button>
                     </div>
                 </div>
                 <div class="sound-toggle">
@@ -111,7 +122,9 @@
                         <button id="stop-recording" class="btn-icon" title="Stop recording">⏹️</button>
                     </div>
                 </div>
-                <input type="text" id="message-input" class="message-input" placeholder="Type a message...">
+                <div class="message-input-wrapper">
+                    <input type="text" id="message-input" class="message-input" placeholder="Type a message... (Paste YouTube or image URLs for auto-embed)">
+                </div>
                 <button id="send-button" class="btn btn-send">Send</button>
             </div>
         </div>
