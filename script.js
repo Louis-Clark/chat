@@ -181,6 +181,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
 
+                // Disable send button while sending
+                sendButton.disabled = true;
+                const originalText = sendButton.textContent;
+                sendButton.textContent = '⏳';
+
                 console.log('📤 Sending message:', text);
                 
                 const messageData = {
@@ -193,20 +198,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 };
 
                 db.ref('messages').push(messageData, function(error) {
+                    // Re-enable send button
+                    sendButton.disabled = false;
+                    sendButton.textContent = originalText;
+
                     if (error) {
                         console.error('❌ Error sending message:', error);
-                        console.error('Error code:', error.code);
-                        console.error('Error message:', error.message);
-                        alert('Failed to send message: ' + error.message);
+                        alert('Failed to send: ' + (error.message || 'Unknown error'));
                     } else {
                         console.log('✅ Message sent successfully');
                         messageInput.value = '';
+                        messageInput.focus();
                         clearTypingStatus();
                     }
                 });
             } catch (err) {
                 console.error('Exception sending message:', err);
-                alert('Exception: ' + err.message);
+                sendButton.disabled = false;
+                sendButton.textContent = originalText;
+                alert('Error: ' + err.message);
             }
         }
 
@@ -218,6 +228,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('Please upload an image file.');
                 return;
             }
+
+            // Disable the button while uploading
+            imageBtn.disabled = true;
+            const originalText = imageBtn.textContent;
+            imageBtn.textContent = '⏳';
 
             // Upload to Cloudinary
             const formData = new FormData();
@@ -248,18 +263,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     mediaType: 'image',
                     mediaUrl: data.secure_url
                 }, (error) => {
+                    // Re-enable button
+                    imageBtn.disabled = false;
+                    imageBtn.textContent = originalText;
+
                     if (error) {
                         console.error('Error saving message:', error);
                         alert('Error saving message: ' + error.message);
                     } else {
                         console.log('✅ Message saved');
+                        imageInput.value = '';
                     }
                 });
-
-                imageInput.value = '';
             })
             .catch((error) => {
                 console.error('❌ Upload error:', error);
+                imageBtn.disabled = false;
+                imageBtn.textContent = originalText;
                 alert('Upload failed: ' + error.message);
                 imageInput.value = '';
             });
@@ -558,11 +578,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
         function formatTime(timestamp) {
             const date = new Date(timestamp);
-            return date.toLocaleTimeString('en-US', { 
-                hour: '2-digit', 
-                minute: '2-digit',
-                hour12: true
-            });
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMs / 3600000);
+            const diffDays = Math.floor(diffMs / 86400000);
+
+            if (diffMins < 1) {
+                return 'now';
+            } else if (diffMins < 60) {
+                return `${diffMins}m ago`;
+            } else if (diffHours < 24) {
+                return `${diffHours}h ago`;
+            } else if (diffDays === 1) {
+                return 'yesterday';
+            } else if (diffDays < 7) {
+                return `${diffDays}d ago`;
+            } else {
+                return date.toLocaleDateString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            }
         }
 
         function escapeHtml(text) {
