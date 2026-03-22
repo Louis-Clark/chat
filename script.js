@@ -25,8 +25,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const themeToggle = document.getElementById('theme-toggle');
         const clearChatBtn = document.getElementById('clear-chat');
         const emojiBtn = document.getElementById('emoji-btn');
-        const imageBtn = document.getElementById('image-btn');
-        const imageInput = document.getElementById('image-input');
+        const uploadBtn = document.getElementById('upload-btn');
+        const fileInput = document.getElementById('file-input');
         const voiceBtn = document.getElementById('voice-btn');
         const voiceRecordingUI = document.getElementById('voice-recording');
         const stopRecordingBtn = document.getElementById('stop-recording');
@@ -112,8 +112,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (emojiBtn) emojiBtn.addEventListener('click', () => {
             messageInput.focus();
         });
-        if (imageBtn) imageBtn.addEventListener('click', () => imageInput.click());
-        if (imageInput) imageInput.addEventListener('change', handleImageUpload);
+        
+        // Unified upload button
+        if (uploadBtn) uploadBtn.addEventListener('click', () => fileInput.click());
+        if (fileInput) fileInput.addEventListener('change', handleFileUpload);
+        
         if (voiceBtn) voiceBtn.addEventListener('click', startVoiceRecording);
         if (stopRecordingBtn) stopRecordingBtn.addEventListener('click', stopVoiceRecording);
 
@@ -244,7 +247,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!url) return null;
             
             // Handle Bing Image Cache URLs (th/id/OGC format)
-            // Example: https://www.bing.com/th/id/OGC.20828bc040c2d7dd237de8e0a9803a0e?o=7&pid=1.7&rm=3&rurl=https%3a%2f%2fmedia.tenor.com%2fimages%2f...%2ftenor.gif&ehk=...
             const bingCacheMatch = url.match(/[?&]rurl=([^&]+)/i);
             if (bingCacheMatch) {
                 const decodedUrl = decodeURIComponent(bingCacheMatch[1]);
@@ -268,15 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return decodedUrl;
             }
             
-            // Try to extract imgurl parameter from other image search engines
-            const imgurMatch = url.match(/[?&]imgurl=([^&]+)/i);
-            if (imgurMatch) {
-                const decodedUrl = decodeURIComponent(imgurMatch[1]);
-                console.log('🔍 Extracted image URL:', decodedUrl);
-                return decodedUrl;
-            }
-            
-            // Try to extract direct image URL from common patterns (for URLs that already contain image extension)
+            // Try to extract direct image URL from common patterns
             const directImageMatch = url.match(/(https?:\/\/[^\s]+?\.(jpg|jpeg|png|gif|webp|bmp|svg))/i);
             if (directImageMatch && !url.includes('bing.com') && !url.includes('google.com')) {
                 console.log('🔍 Extracted direct image URL:', directImageMatch[1]);
@@ -314,12 +308,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         };
                     }
                     
-                    // Extract direct image URL from various search result URLs (Bing cache, Google, etc.)
+                    // Extract direct image URL from various search result URLs
                     const directImageUrl = extractDirectImageUrl(url);
                     if (directImageUrl) {
                         let processedText = text.replace(url, '').trim();
                         if (!processedText) {
-                            // Check if it's a GIF
                             if (directImageUrl.match(/\.(gif)$/i)) {
                                 processedText = '🎬 Shared a GIF';
                             } else {
@@ -338,7 +331,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         };
                     }
                     
-                    // Check for direct image/GIF links (URL ends with image extension)
+                    // Check for direct image/GIF links
                     if (url.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i)) {
                         let processedText = text.replace(url, '').trim();
                         if (!processedText) {
@@ -380,7 +373,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             
-            // Check if player already exists for this message
             if (window.youtubePlayers.has(messageId)) {
                 return;
             }
@@ -444,7 +436,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     const containerId = `youtube-container-${messageId}`;
                     
-                    // Store the container ID for later initialization
                     setTimeout(() => {
                         createYouTubePlayer(containerId, videoId, messageId);
                     }, 100);
@@ -477,7 +468,6 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const urlRegex = /(https?:\/\/[^\s]+)/g;
             const linkedText = text.replace(urlRegex, (url) => {
-                // Skip YouTube URLs, image URLs, and search URLs that contain images
                 if (extractYouTubeId(url) || 
                     url.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i) ||
                     extractDirectImageUrl(url)) {
@@ -489,7 +479,275 @@ document.addEventListener('DOMContentLoaded', () => {
             return linkedText;
         }
 
-        // ========== EXISTING FUNCTIONS (unchanged) ==========
+        // ========== UNIFIED MEDIA UPLOAD FUNCTION ==========
+
+        function handleFileUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // Determine file type and validate
+            let mediaType = '';
+            let defaultText = '';
+            let maxSize = 0;
+
+            if (file.type.startsWith('image/')) {
+                mediaType = 'image';
+                defaultText = '📷 Shared an image';
+                maxSize = 20 * 1024 * 1024; // 20MB for images
+            } else if (file.type.startsWith('video/')) {
+                mediaType = 'video';
+                defaultText = '🎥 Shared a video';
+                maxSize = 100 * 1024 * 1024; // 100MB for videos
+            } else if (file.type.startsWith('audio/')) {
+                mediaType = 'audio';
+                defaultText = '🎵 Shared an audio file';
+                maxSize = 50 * 1024 * 1024; // 50MB for audio
+            } else {
+                alert('Unsupported file type. Please upload an image, video, or audio file.');
+                fileInput.value = '';
+                return;
+            }
+
+            // Check file size
+            if (file.size > maxSize) {
+                const sizeMB = Math.round(maxSize / (1024 * 1024));
+                alert(`File is too large. Maximum size is ${sizeMB}MB.`);
+                fileInput.value = '';
+                return;
+            }
+
+            // Upload to Cloudinary
+            uploadToCloudinary(file, mediaType, defaultText);
+            
+            // Reset file input
+            fileInput.value = '';
+        }
+
+        function uploadToCloudinary(file, mediaType, defaultText) {
+            // Disable upload button and show loading state
+            if (uploadBtn) {
+                uploadBtn.disabled = true;
+                uploadBtn.textContent = '⏳';
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('upload_preset', window.CLOUDINARY_UPLOAD_PRESET);
+
+            console.log(`📤 Uploading ${mediaType} to Cloudinary...`);
+
+            fetch(`https://api.cloudinary.com/v1_1/${window.CLOUDINARY_CLOUD_NAME}/auto/upload`, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) throw new Error('Upload failed: ' + response.statusText);
+                return response.json();
+            })
+            .then(data => {
+                console.log(`✅ ${mediaType} uploaded:`, data.secure_url);
+
+                const db = window.database;
+                if (db) {
+                    db.ref('messages').push({
+                        username: username,
+                        text: defaultText,
+                        timestamp: Date.now(),
+                        userId: userId,
+                        userColor: userColor,
+                        isMedia: true,
+                        mediaType: mediaType,
+                        mediaUrl: data.secure_url,
+                        isDeleted: false,
+                        isEdited: false
+                    }, (error) => {
+                        // Re-enable upload button
+                        if (uploadBtn) {
+                            uploadBtn.disabled = false;
+                            uploadBtn.textContent = '📎';
+                        }
+
+                        if (error) {
+                            console.error('Error saving message:', error);
+                            alert('Error saving message: ' + error.message);
+                        } else {
+                            console.log('✅ Message saved');
+                        }
+                    });
+                } else {
+                    // Re-enable upload button if no database
+                    if (uploadBtn) {
+                        uploadBtn.disabled = false;
+                        uploadBtn.textContent = '📎';
+                    }
+                }
+            })
+            .catch((error) => {
+                console.error(`❌ ${mediaType} upload error:`, error);
+                if (uploadBtn) {
+                    uploadBtn.disabled = false;
+                    uploadBtn.textContent = '📎';
+                }
+                alert(`Upload failed: ${error.message}`);
+            });
+        }
+
+        // ========== VOICE RECORDING FUNCTIONS ==========
+
+        async function startVoiceRecording() {
+            try {
+                // Reset any existing recording state
+                if (mediaRecorder && mediaRecorder.state === 'recording') {
+                    stopVoiceRecording();
+                }
+                
+                // Close any existing stream
+                if (audioStream) {
+                    audioStream.getTracks().forEach(track => track.stop());
+                    audioStream = null;
+                }
+                
+                audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(audioStream);
+                audioChunks = [];
+                recordingStartTime = Date.now();
+
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) {
+                        audioChunks.push(e.data);
+                    }
+                };
+
+                mediaRecorder.onstop = () => {
+                    console.log('🎤 Recording stopped, processing audio...');
+                    if (audioChunks.length > 0) {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        sendVoiceMessage(audioBlob);
+                    } else {
+                        console.log('No audio data recorded');
+                    }
+                    
+                    // Clean up
+                    if (audioStream) {
+                        audioStream.getTracks().forEach(track => track.stop());
+                        audioStream = null;
+                    }
+                    mediaRecorder = null;
+                    audioChunks = [];
+                    
+                    // Hide recording UI and show voice button
+                    if (voiceRecordingUI) voiceRecordingUI.classList.add('hidden');
+                    if (voiceBtn) voiceBtn.classList.remove('hidden');
+                    if (recordingTimer) clearInterval(recordingTimer);
+                    recordingTimer = null;
+                };
+
+                mediaRecorder.start(100); // Collect data in 100ms chunks
+                if (voiceRecordingUI) voiceRecordingUI.classList.remove('hidden');
+                if (voiceBtn) voiceBtn.classList.add('hidden');
+                startRecordingTimer();
+                console.log('🎤 Voice recording started');
+            } catch (err) {
+                console.error('Error accessing microphone:', err);
+                alert('Please allow microphone access to record voice messages.');
+                // Reset UI on error
+                if (voiceRecordingUI) voiceRecordingUI.classList.add('hidden');
+                if (voiceBtn) voiceBtn.classList.remove('hidden');
+            }
+        }
+
+        function stopVoiceRecording() {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                console.log('⏹️ Stopping voice recording...');
+                mediaRecorder.stop();
+            } else {
+                // Clean up even if no recording was active
+                if (voiceRecordingUI) voiceRecordingUI.classList.add('hidden');
+                if (voiceBtn) voiceBtn.classList.remove('hidden');
+                if (recordingTimer) clearInterval(recordingTimer);
+                recordingTimer = null;
+                
+                if (audioStream) {
+                    audioStream.getTracks().forEach(track => track.stop());
+                    audioStream = null;
+                }
+            }
+        }
+
+        function startRecordingTimer() {
+            if (recordingTimer) clearInterval(recordingTimer);
+            recordingTimer = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+                const minutes = Math.floor(elapsed / 60);
+                const seconds = elapsed % 60;
+                if (recordingTimeDisplay) {
+                    recordingTimeDisplay.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                }
+            }, 100);
+        }
+
+        function sendVoiceMessage(audioBlob) {
+            // Don't send empty recordings
+            if (audioBlob.size < 1000) {
+                console.log('Recording too short, not sending');
+                return;
+            }
+            
+            // Disable voice button during upload
+            if (voiceBtn) voiceBtn.disabled = true;
+            
+            const formData = new FormData();
+            formData.append('file', audioBlob, 'voice_message.webm');
+            formData.append('upload_preset', window.CLOUDINARY_UPLOAD_PRESET);
+
+            console.log('📤 Uploading voice message to Cloudinary...');
+
+            fetch(`https://api.cloudinary.com/v1_1/${window.CLOUDINARY_CLOUD_NAME}/auto/upload`, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) throw new Error('Upload failed: ' + response.statusText);
+                return response.json();
+            })
+            .then(data => {
+                console.log('✅ Voice message uploaded:', data.secure_url);
+
+                const db = window.database;
+                if (db) {
+                    db.ref('messages').push({
+                        username: username,
+                        text: '🎤 Sent a voice message',
+                        timestamp: Date.now(),
+                        userId: userId,
+                        userColor: userColor,
+                        isMedia: true,
+                        mediaType: 'audio',
+                        mediaUrl: data.secure_url,
+                        isDeleted: false,
+                        isEdited: false
+                    }, (error) => {
+                        if (voiceBtn) voiceBtn.disabled = false;
+                        
+                        if (error) {
+                            console.error('Error saving voice message:', error);
+                            alert('Error saving voice message: ' + error.message);
+                        } else {
+                            console.log('✅ Voice message saved');
+                        }
+                    });
+                } else {
+                    if (voiceBtn) voiceBtn.disabled = false;
+                }
+            })
+            .catch((error) => {
+                console.error('❌ Voice upload error:', error);
+                if (voiceBtn) voiceBtn.disabled = false;
+                alert('Failed to send voice message: ' + error.message);
+            });
+        }
+
+        // ========== EXISTING FUNCTIONS (unchanged from previous) ==========
 
         function generateUserId() {
             const id = 'user_' + Math.random().toString(36).substr(2, 9);
@@ -538,7 +796,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 isInitialized = true;
                 console.log('✅ Chat ready!');
                 
-                // Preload YouTube API
                 loadYouTubeAPI().catch(err => console.warn('YouTube API preload failed:', err));
             } catch (err) {
                 console.error('Error entering chat:', err);
@@ -768,7 +1025,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 messageRef.once('value', (snapshot) => {
                     const messageData = snapshot.val();
                     if (messageData && messageData.userId === userId) {
-                        // Clean up YouTube player if it exists
                         if (window.youtubePlayers.has(messageId)) {
                             const player = window.youtubePlayers.get(messageId);
                             if (player && player.destroy) {
@@ -802,177 +1058,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('Error deleting message:', err);
                 alert('Error: ' + err.message);
             }
-        }
-
-        function handleImageUpload(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            if (!file.type.startsWith('image/')) {
-                alert('Please upload an image file.');
-                return;
-            }
-
-            if (imageBtn) imageBtn.disabled = true;
-            const originalText = imageBtn ? imageBtn.textContent : '📷';
-            if (imageBtn) imageBtn.textContent = '⏳';
-
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('upload_preset', window.CLOUDINARY_UPLOAD_PRESET);
-
-            console.log('📤 Uploading image to Cloudinary...');
-
-            fetch(`https://api.cloudinary.com/v1_1/${window.CLOUDINARY_CLOUD_NAME}/auto/upload`, {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => {
-                if (!response.ok) throw new Error('Upload failed: ' + response.statusText);
-                return response.json();
-            })
-            .then(data => {
-                console.log('✅ Image uploaded:', data.secure_url);
-
-                const db = window.database;
-                if (db) {
-                    db.ref('messages').push({
-                        username: username,
-                        text: '📷 Shared an image',
-                        timestamp: Date.now(),
-                        userId: userId,
-                        userColor: userColor,
-                        isMedia: true,
-                        mediaType: 'image',
-                        mediaUrl: data.secure_url,
-                        isDeleted: false,
-                        isEdited: false
-                    }, (error) => {
-                        if (imageBtn) {
-                            imageBtn.disabled = false;
-                            imageBtn.textContent = originalText;
-                        }
-
-                        if (error) {
-                            console.error('Error saving message:', error);
-                            alert('Error saving message: ' + error.message);
-                        } else {
-                            console.log('✅ Message saved');
-                            if (imageInput) imageInput.value = '';
-                        }
-                    });
-                }
-            })
-            .catch((error) => {
-                console.error('❌ Upload error:', error);
-                if (imageBtn) {
-                    imageBtn.disabled = false;
-                    imageBtn.textContent = originalText;
-                }
-                alert('Upload failed: ' + error.message);
-                if (imageInput) imageInput.value = '';
-            });
-        }
-
-        async function startVoiceRecording() {
-            try {
-                audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                mediaRecorder = new MediaRecorder(audioStream);
-                audioChunks = [];
-                recordingStartTime = Date.now();
-
-                mediaRecorder.ondataavailable = (e) => {
-                    audioChunks.push(e.data);
-                };
-
-                mediaRecorder.onstop = () => {
-                    if (audioStream) {
-                        audioStream.getTracks().forEach(track => track.stop());
-                    }
-                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-                    sendVoiceMessage(audioBlob);
-                };
-
-                mediaRecorder.start();
-                if (voiceRecordingUI) voiceRecordingUI.classList.remove('hidden');
-                if (voiceBtn) voiceBtn.classList.add('hidden');
-                startRecordingTimer();
-                console.log('🎤 Voice recording started');
-            } catch (err) {
-                console.error('Error accessing microphone:', err);
-                alert('Please allow microphone access to record voice messages.');
-            }
-        }
-
-        function stopVoiceRecording() {
-            if (mediaRecorder && mediaRecorder.state === 'recording') {
-                mediaRecorder.stop();
-            }
-            
-            if (audioStream) {
-                audioStream.getTracks().forEach(track => track.stop());
-                audioStream = null;
-            }
-            
-            if (voiceRecordingUI) voiceRecordingUI.classList.add('hidden');
-            if (voiceBtn) voiceBtn.classList.remove('hidden');
-            if (recordingTimer) clearInterval(recordingTimer);
-            console.log('⏹️ Voice recording stopped and microphone turned off');
-        }
-
-        function startRecordingTimer() {
-            if (recordingTimer) clearInterval(recordingTimer);
-            recordingTimer = setInterval(() => {
-                const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
-                const minutes = Math.floor(elapsed / 60);
-                const seconds = elapsed % 60;
-                if (recordingTimeDisplay) {
-                    recordingTimeDisplay.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-                }
-            }, 100);
-        }
-
-        function sendVoiceMessage(audioBlob) {
-            const formData = new FormData();
-            formData.append('file', audioBlob, 'voice_message.wav');
-            formData.append('upload_preset', window.CLOUDINARY_UPLOAD_PRESET);
-
-            console.log('📤 Uploading voice message to Cloudinary...');
-
-            fetch(`https://api.cloudinary.com/v1_1/${window.CLOUDINARY_CLOUD_NAME}/auto/upload`, {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                console.log('✅ Voice message uploaded:', data.secure_url);
-
-                const db = window.database;
-                if (db) {
-                    db.ref('messages').push({
-                        username: username,
-                        text: '🎵 Sent a voice message',
-                        timestamp: Date.now(),
-                        userId: userId,
-                        userColor: userColor,
-                        isMedia: true,
-                        mediaType: 'audio',
-                        mediaUrl: data.secure_url,
-                        isDeleted: false,
-                        isEdited: false
-                    }, (error) => {
-                        if (error) {
-                            console.error('Error saving voice message:', error);
-                        } else {
-                            console.log('✅ Voice message saved');
-                        }
-                    });
-                }
-            })
-            .catch((error) => {
-                console.error('❌ Voice upload error:', error);
-                alert('Failed to send voice message: ' + error.message);
-            });
         }
 
         function displayMessage(message, options = {}) {
@@ -1038,7 +1123,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (message.mediaType === 'image') {
                     content += `<img src="${message.mediaUrl}" alt="Shared image" class="message-image" loading="lazy" style="max-width: 100%; max-height: 400px; border-radius: 12px; margin-top: 8px;">`;
                 } else if (message.mediaType === 'video') {
-                    content += `<video controls class="message-video" style="max-width: 100%; border-radius: 12px; margin-top: 8px;"><source src="${message.mediaUrl}" type="video/mp4">Your browser does not support video playback.</video>`;
+                    content += `<video controls class="message-video" style="max-width: 100%; max-height: 400px; border-radius: 12px; margin-top: 8px;"><source src="${message.mediaUrl}" type="video/mp4">Your browser does not support video playback.</video>`;
                 } else if (message.mediaType === 'audio') {
                     content += `<audio controls class="message-audio" style="width: 100%; margin-top: 8px;"><source src="${message.mediaUrl}" type="audio/mpeg">Your browser does not support audio playback.</audio>`;
                 }
@@ -1151,7 +1236,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     try {
                         if (userRef) userRef.remove();
                         clearTypingStatus();
-                        // Clean up YouTube players
                         window.youtubePlayers.forEach((player, id) => {
                             if (player && player.destroy) {
                                 player.destroy();
@@ -1277,7 +1361,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (chatMessages && confirm('Are you sure you want to clear all messages?')) {
                 chatMessages.innerHTML = '';
                 messagesCache.clear();
-                // Clean up YouTube players
                 window.youtubePlayers.forEach((player, id) => {
                     if (player && player.destroy) {
                         player.destroy();
@@ -1289,7 +1372,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         function resetSession() {
             if (!confirm('Reset local data and reconnect?')) return;
-            // Clean up YouTube players
             window.youtubePlayers.forEach((player, id) => {
                 if (player && player.destroy) {
                     player.destroy();

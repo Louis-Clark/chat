@@ -208,6 +208,36 @@ body {
     transform: scale(0.95);
 }
 
+/* Add a subtle tooltip for the upload button to indicate multiple formats */
+#upload-btn {
+    position: relative;
+}
+
+#upload-btn:hover::after {
+    content: "📷 Images • 🎥 Videos • 🎵 Audio";
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    white-space: nowrap;
+    margin-bottom: 8px;
+    box-shadow: var(--shadow);
+    pointer-events: none;
+    z-index: 100;
+    border: 1px solid var(--border-color);
+}
+
+@media (max-width: 768px) {
+    #upload-btn:hover::after {
+        display: none;
+    }
+}
+
 /* Chat Screen */
 .chat-screen {
     display: flex;
