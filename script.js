@@ -596,24 +596,30 @@ document.addEventListener('DOMContentLoaded', () => {
             const diffHours = Math.floor(diffMs / 3600000);
             const diffDays = Math.floor(diffMs / 86400000);
 
+            // Format the time of day (HH:MM AM/PM)
+            const timeOfDay = date.toLocaleTimeString('en-US', { 
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+            });
+
+            // Format the relative time
+            let relativeTime;
             if (diffMins < 1) {
-                return 'now';
+                relativeTime = 'now';
             } else if (diffMins < 60) {
-                return `${diffMins}m ago`;
+                relativeTime = `${diffMins}m ago`;
             } else if (diffHours < 24) {
-                return `${diffHours}h ago`;
+                relativeTime = `${diffHours}h ago`;
             } else if (diffDays === 1) {
-                return 'yesterday';
+                relativeTime = 'yesterday';
             } else if (diffDays < 7) {
-                return `${diffDays}d ago`;
+                relativeTime = `${diffDays}d ago`;
             } else {
-                return date.toLocaleDateString('en-US', { 
-                    month: 'short', 
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                });
+                relativeTime = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
             }
+
+            return `${timeOfDay} ${relativeTime}`;
         }
 
         function escapeHtml(text) {
