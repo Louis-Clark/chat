@@ -406,12 +406,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else if (message.mediaType === 'audio') {
                     content += `<audio controls class="message-audio"><source src="${message.mediaUrl}" type="audio/mpeg">Your browser does not support audio playback.</audio>`;
                 } else {
-                    const { processedText } = processMentions(message.text);
-                    content += `<div class="message-text">${linkifyText(escapeHtml(processedText))}</div>`;
+                    const escapedText = escapeHtml(message.text);
+                    const linkedText = linkifyText(escapedText);
+                    const highlightedText = highlightMentions(linkedText);
+                    content += `<div class="message-text">${highlightedText}</div>`;
                 }
             } else {
-                const { processedText, hasMention, mentionedUsers } = processMentions(message.text);
-                content += `<div class="message-text">${linkifyText(escapeHtml(processedText))}</div>`;
+                const { hasMention, mentionedUsers } = processMentions(message.text);
+                const escapedText = escapeHtml(message.text);
+                const linkedText = linkifyText(escapedText);
+                const highlightedText = highlightMentions(linkedText);
+                content += `<div class="message-text">${highlightedText}</div>`;
                 
                 // Store mention info for sound playing
                 messageDiv.dataset.hasMention = hasMention;
@@ -671,12 +676,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 hasMention = true;
             }
             
-            // Highlight mentions in the text
-            const processedText = text.replace(mentionRegex, (match, username) => {
-                return `<span class="mention">@${username}</span>`;
-            });
+            return { hasMention, mentionedUsers };
+        }
+
+        function highlightMentions(text) {
+            if (!text) return text;
             
-            return { processedText, hasMention, mentionedUsers };
+            // Replace @mentions with highlighted spans
+            return text.replace(/@(\w+)/g, '<span class="mention">@$1</span>');
         }
 
         function isUserMentioned(mentionedUsers) {
