@@ -37,6 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let isDarkMode = localStorage.getItem('darkMode') === 'true';
         let soundEnabled = localStorage.getItem('soundEnabled') !== 'false';
         let currentReply = null;
+        let currentEdit = null; // Track message being edited
         let typingTimeout;
         let mediaRecorder = null;
         let audioChunks = [];
@@ -77,11 +78,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Event Listeners - Chat
-        if (sendButton) sendButton.addEventListener('click', sendMessage);
+        if (sendButton) sendButton.addEventListener('click', () => {
+            if (currentEdit) {
+                saveEditedMessage();
+            } else {
+                sendMessage();
+            }
+        });
+        
         if (messageInput) messageInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                sendMessage();
+                if (currentEdit) {
+                    saveEditedMessage();
+                } else {
+                    sendMessage();
+                }
             }
         });
 
@@ -101,26 +113,43 @@ document.addEventListener('DOMContentLoaded', () => {
         if (voiceBtn) voiceBtn.addEventListener('click', startVoiceRecording);
         if (stopRecordingBtn) stopRecordingBtn.addEventListener('click', stopVoiceRecording);
 
-        // Event delegation for reply buttons
+        // Event delegation for reply, edit, and delete buttons
         if (chatMessages) chatMessages.addEventListener('click', (e) => {
+            const messageElement = e.target.closest('.message');
+            if (!messageElement) return;
+            
+            const messageId = messageElement.id.replace('message-', '');
+            
+            // Reply button
             if (e.target.classList.contains('reply-btn')) {
-                const messageElement = e.target.closest('.message');
-                const messageId = messageElement.id.replace('message-', '');
                 const replyUsername = messageElement.querySelector('.message-username').textContent;
                 const messageText = messageElement.querySelector('.message-text')?.textContent || '[Media]';
-                
                 startReply(messageId, replyUsername, messageText, messageElement);
+            }
+            
+            // Edit button (only for own messages)
+            if (e.target.classList.contains('edit-btn')) {
+                const messageData = getMessageDataById(messageId);
+                if (messageData && messageData.userId === userId) {
+                    startEdit(messageId, messageData.text, messageElement);
+                }
+            }
+            
+            // Delete button (only for own messages)
+            if (e.target.classList.contains('delete-btn')) {
+                const messageData = getMessageDataById(messageId);
+                if (messageData && messageData.userId === userId) {
+                    deleteMessage(messageId);
+                }
             }
         });
 
         // Event delegation for clicking on reply previews in messages
         if (chatMessages) chatMessages.addEventListener('click', (e) => {
-            // Check if clicking on a reply preview
             const replyPreview = e.target.closest('.message-reply');
             if (replyPreview) {
                 const messageElement = replyPreview.closest('.message');
                 if (messageElement) {
-                    // Find the reply data from the message
                     const messageId = messageElement.id.replace('message-', '');
                     const messageData = getMessageDataById(messageId);
                     if (messageData && messageData.replyTo && messageData.replyTo.id) {
@@ -164,6 +193,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         function storeMessageData(messageId, messageData) {
             messagesCache.set(messageId, messageData);
+        }
+
+        function updateMessageInCache(messageId, updatedData) {
+            const existing = messagesCache.get(messageId);
+            if (existing) {
+                messagesCache.set(messageId, { ...existing, ...updatedData });
+            }
         }
 
         function enterChat() {
@@ -237,7 +273,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         id: currentReply.id,
                         username: currentReply.username,
                         text: currentReply.text
-                    } : null
+                    } : null,
+                    isDeleted: false,
+                    isEdited: false,
+                    editHistory: []
                 };
 
                 db.ref('messages').push(messageData, function(error) {
@@ -261,6 +300,186 @@ document.addEventListener('DOMContentLoaded', () => {
                     sendButton.disabled = false;
                     sendButton.textContent = '📤';
                 }
+                alert('Error: ' + err.message);
+            }
+        }
+
+        function startEdit(messageId, currentText, messageElement) {
+            // Cancel any ongoing reply
+            if (currentReply) {
+                cancelReply();
+            }
+            
+            currentEdit = {
+                id: messageId,
+                originalText: currentText,
+                element: messageElement
+            };
+            
+            // Set the message input to the current text
+            messageInput.value = currentText;
+            messageInput.focus();
+            
+            // Update send button text
+            sendButton.textContent = '✏️ Update';
+            
+            // Show edit preview
+            updateEditPreview();
+            
+            // Highlight the message being edited
+            messageElement.style.transition = 'background-color 0.3s';
+            messageElement.style.backgroundColor = 'rgba(108, 92, 231, 0.2)';
+        }
+
+        function updateEditPreview() {
+            const existingPreview = document.querySelector('.current-edit-preview');
+            if (existingPreview) {
+                existingPreview.remove();
+            }
+
+            if (currentEdit && messageInput) {
+                const previewDiv = document.createElement('div');
+                previewDiv.className = 'current-edit-preview';
+                previewDiv.innerHTML = `
+                    <div class="edit-content" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background-color: rgba(255, 193, 7, 0.1); border-radius: 8px; margin-bottom: 8px;">
+                        <span class="edit-label" style="font-size: 12px; color: #ffc107;">✏️ Editing message:</span>
+                        <span class="edit-text" style="font-size: 12px; color: var(--text-secondary); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(currentEdit.originalText.substring(0, 50))}${currentEdit.originalText.length > 50 ? '...' : ''}</span>
+                        <button class="cancel-edit" style="background: none; border: none; cursor: pointer; font-size: 16px; padding: 0 4px;" title="Cancel edit">✕</button>
+                    </div>
+                `;
+
+                // Add cancel handler
+                const cancelBtn = previewDiv.querySelector('.cancel-edit');
+                if (cancelBtn) {
+                    cancelBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        cancelEdit();
+                    });
+                }
+
+                // Insert before input area
+                const inputArea = document.querySelector('.input-area');
+                if (inputArea && inputArea.parentNode) {
+                    inputArea.parentNode.insertBefore(previewDiv, inputArea);
+                }
+            }
+        }
+
+        function cancelEdit() {
+            if (currentEdit && currentEdit.element) {
+                currentEdit.element.style.backgroundColor = '';
+            }
+            currentEdit = null;
+            messageInput.value = '';
+            sendButton.textContent = '📤 Send';
+            const editPreview = document.querySelector('.current-edit-preview');
+            if (editPreview) {
+                editPreview.remove();
+            }
+        }
+
+        function saveEditedMessage() {
+            const newText = messageInput.value.trim();
+            if (!newText || !currentEdit) return;
+            
+            if (newText === currentEdit.originalText) {
+                cancelEdit();
+                return;
+            }
+            
+            try {
+                const db = window.database;
+                if (!db) {
+                    alert('Database not connected');
+                    return;
+                }
+                
+                const originalText = sendButton.textContent;
+                sendButton.disabled = true;
+                sendButton.textContent = '⏳';
+                
+                // Get the current message data
+                const messageRef = db.ref(`messages/${currentEdit.id}`);
+                messageRef.once('value', (snapshot) => {
+                    const messageData = snapshot.val();
+                    if (messageData && messageData.userId === userId) {
+                        // Update the message
+                        const updatedData = {
+                            text: newText,
+                            isEdited: true,
+                            lastEdited: Date.now(),
+                            editHistory: [...(messageData.editHistory || []), {
+                                text: messageData.text,
+                                timestamp: Date.now()
+                            }]
+                        };
+                        
+                        messageRef.update(updatedData, (error) => {
+                            sendButton.disabled = false;
+                            sendButton.textContent = originalText;
+                            
+                            if (error) {
+                                console.error('Error updating message:', error);
+                                alert('Failed to update message: ' + error.message);
+                            } else {
+                                console.log('✅ Message updated successfully');
+                                cancelEdit();
+                                messageInput.focus();
+                            }
+                        });
+                    } else {
+                        sendButton.disabled = false;
+                        sendButton.textContent = originalText;
+                        alert('You can only edit your own messages');
+                        cancelEdit();
+                    }
+                });
+            } catch (err) {
+                console.error('Error saving edited message:', err);
+                sendButton.disabled = false;
+                sendButton.textContent = '📤';
+                alert('Error: ' + err.message);
+            }
+        }
+
+        function deleteMessage(messageId) {
+            if (!confirm('Are you sure you want to delete this message?')) return;
+            
+            try {
+                const db = window.database;
+                if (!db) {
+                    alert('Database not connected');
+                    return;
+                }
+                
+                const messageRef = db.ref(`messages/${messageId}`);
+                messageRef.once('value', (snapshot) => {
+                    const messageData = snapshot.val();
+                    if (messageData && messageData.userId === userId) {
+                        // Soft delete - update the message content
+                        messageRef.update({
+                            isDeleted: true,
+                            text: '🗑️ This message was deleted',
+                            deletedAt: Date.now(),
+                            originalText: messageData.text // Keep original for reference
+                        }, (error) => {
+                            if (error) {
+                                console.error('Error deleting message:', error);
+                                alert('Failed to delete message: ' + error.message);
+                            } else {
+                                console.log('✅ Message deleted successfully');
+                                // If we're editing this message, cancel edit
+                                if (currentEdit && currentEdit.id === messageId) {
+                                    cancelEdit();
+                                }
+                            }
+                        });
+                    } else {
+                        alert('You can only delete your own messages');
+                    }
+                });
+            } catch (err) {
+                console.error('Error deleting message:', err);
                 alert('Error: ' + err.message);
             }
         }
@@ -305,7 +524,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         userColor: userColor,
                         isMedia: true,
                         mediaType: 'image',
-                        mediaUrl: data.secure_url
+                        mediaUrl: data.secure_url,
+                        isDeleted: false,
+                        isEdited: false
                     }, (error) => {
                         if (imageBtn) {
                             imageBtn.disabled = false;
@@ -416,7 +637,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         userColor: userColor,
                         isMedia: true,
                         mediaType: 'audio',
-                        mediaUrl: data.secure_url
+                        mediaUrl: data.secure_url,
+                        isDeleted: false,
+                        isEdited: false
                     }, (error) => {
                         if (error) {
                             console.error('Error saving voice message:', error);
@@ -460,11 +683,25 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="message-header">
                         <span class="message-username">${escapeHtml(message.username)}</span>
                         <span class="message-timestamp">${timestamp}</span>
-                        <button class="reply-btn" data-message-id="${message.id || message.timestamp}" data-username="${escapeHtml(message.username)}" data-text="${escapeHtml(message.text)}" title="Reply to this message">🗨️</button>
+                        <div class="message-actions">`;
+
+            // Add action buttons for own messages
+            if (message.userId === userId && !message.isDeleted) {
+                content += `
+                    <button class="edit-btn" title="Edit message">✏️</button>
+                    <button class="delete-btn" title="Delete message">🗑️</button>`;
+            }
+            
+            // Add reply button for all non-deleted messages
+            if (!message.isDeleted) {
+                content += `<button class="reply-btn" title="Reply to this message">🗨️</button>`;
+            }
+            
+            content += `</div>
                     </div>`;
 
             // Add reply display if this message is a reply
-            if (message.replyTo) {
+            if (message.replyTo && !message.isDeleted) {
                 content += `
                     <div class="message-reply" data-reply-id="${message.replyTo.id}" style="cursor: pointer;" title="Click to view original message">
                         <div class="reply-line"></div>
@@ -476,7 +713,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Handle media messages
-            if (message.isMedia) {
+            if (message.isMedia && !message.isDeleted) {
                 if (message.mediaType === 'image') {
                     content += `<img src="${message.mediaUrl}" alt="Shared image" class="message-image" loading="lazy">`;
                 } else if (message.mediaType === 'video') {
@@ -487,11 +724,23 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Process text content
-            const { mentionedUsers } = processMentions(message.text);
-            const escapedText = escapeHtml(message.text);
-            const linkedText = linkifyText(escapedText);
-            const highlightedText = highlightMentions(linkedText);
-            content += `<div class="message-text">${highlightedText}</div>`;
+            let textContent = message.text;
+            let editedBadge = '';
+            
+            if (message.isDeleted) {
+                textContent = '🗑️ This message was deleted';
+                content += `<div class="message-text deleted-message" style="font-style: italic; color: var(--text-secondary);">${escapeHtml(textContent)}</div>`;
+            } else {
+                if (message.isEdited) {
+                    editedBadge = '<span class="edited-badge" style="font-size: 10px; color: var(--text-secondary); margin-left: 5px;" title="Message was edited">(edited)</span>';
+                }
+                
+                const { mentionedUsers } = processMentions(textContent);
+                const escapedText = escapeHtml(textContent);
+                const linkedText = linkifyText(escapedText);
+                const highlightedText = highlightMentions(linkedText);
+                content += `<div class="message-text">${highlightedText}${editedBadge}</div>`;
+            }
             
             content += `</div>`;
             messageDiv.innerHTML = content;
@@ -510,8 +759,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
 
-            // Play notification sound for new messages from other users
-            if (!options.skipSound && message.userId !== userId) {
+            // Play notification sound for new messages from other users (skip deleted messages)
+            if (!options.skipSound && message.userId !== userId && !message.isDeleted) {
+                const { mentionedUsers } = processMentions(message.text);
                 const hasMention = isUserMentioned(mentionedUsers);
                 const isReplyToUser = message.replyTo && message.replyTo.username === username;
                 
@@ -638,6 +888,30 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
 
+                // Listen for message updates (edits)
+                messagesRef.on('child_changed', (snapshot) => {
+                    const updatedMessage = snapshot.val();
+                    updatedMessage.id = snapshot.key;
+                    
+                    // Update cache
+                    updateMessageInCache(snapshot.key, updatedMessage);
+                    
+                    // Update the DOM
+                    const messageElement = document.getElementById(`message-${snapshot.key}`);
+                    if (messageElement) {
+                        // Replace with updated message
+                        const wasAtBottom = chatMessages.scrollHeight - chatMessages.scrollTop <= chatMessages.clientHeight + 50;
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = '';
+                        displayMessage(updatedMessage, { skipSound: true });
+                        const newElement = chatMessages.lastChild;
+                        messageElement.replaceWith(newElement);
+                        if (wasAtBottom) {
+                            chatMessages.scrollTop = chatMessages.scrollHeight;
+                        }
+                    }
+                });
+
                 const typingRef = db.ref('typing');
                 
                 typingRef.on('child_added', (snapshot) => {
@@ -722,6 +996,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function startReply(messageId, replyUsername, messageText, messageElement) {
+            // Cancel any ongoing edit
+            if (currentEdit) {
+                cancelEdit();
+            }
+            
             currentReply = {
                 id: messageId,
                 username: replyUsername,
@@ -794,18 +1073,15 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('Scrolling to:', elementId);
             const messageElement = document.getElementById(elementId);
             if (messageElement && chatMessages) {
-                // Scroll to the message
                 messageElement.scrollIntoView({
                     behavior: 'smooth',
                     block: 'center'
                 });
                 
-                // Add highlight effect
                 const originalBackground = messageElement.style.backgroundColor;
                 messageElement.style.transition = 'background-color 0.3s ease';
                 messageElement.style.backgroundColor = 'rgba(108, 92, 231, 0.3)';
                 
-                // Flash effect
                 let flashCount = 0;
                 const flashInterval = setInterval(() => {
                     if (flashCount >= 3) {
@@ -819,7 +1095,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }, 300);
                 
-                // Also add a border highlight
                 const originalBorder = messageElement.style.border;
                 messageElement.style.border = '2px solid var(--accent-color)';
                 setTimeout(() => {

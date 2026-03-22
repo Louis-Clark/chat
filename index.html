@@ -9,7 +9,6 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
 
-
     <script>
         // Cloudinary configuration
         window.CLOUDINARY_CLOUD_NAME = 'diaz0pbbc';
@@ -35,8 +34,6 @@
             window.firebaseReady = false;
         }
     </script>
-    <!-- Emoji Picker is removed due to MIME type issues -->
-    <!-- Using text-based emoji input instead -->
 </head>
 <body>
     <div class="app">
@@ -87,7 +84,7 @@
 
             <div class="online-users-container">
                 <div id="online-users" class="online-users">
-                    <span class="online-count">Online: 1</span>
+                    <span class="online-count">Online: 0</span>
                 </div>
             </div>
 
@@ -117,8 +114,6 @@
                 <input type="text" id="message-input" class="message-input" placeholder="Type a message...">
                 <button id="send-button" class="btn btn-send">Send</button>
             </div>
-
-            <emoji-picker id="emoji-picker" class="emoji-picker hidden"></emoji-picker>
         </div>
     </div>
 
