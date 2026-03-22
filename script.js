@@ -213,7 +213,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Call this when chat starts
         loadYouTubeAPI().catch(err => console.warn('YouTube API load failed:', err));
 
-        // ========== IMPROVED LINK PREVIEW FUNCTIONS WITH YOUTUBE API ==========
+        // ========== ENHANCED LINK PREVIEW FUNCTIONS ==========
 
         function extractYouTubeId(url) {
             if (!url) return null;
@@ -239,11 +239,20 @@ document.addEventListener('DOMContentLoaded', () => {
             return null;
         }
 
-        // NEW FUNCTION: Extract direct image URL from search result URLs (Bing, Google, etc.)
+        // ENHANCED: Extract direct image URL from various search result URLs (Bing, Google, etc.)
         function extractDirectImageUrl(url) {
             if (!url) return null;
             
-            // Try to extract mediaurl parameter from Bing URLs
+            // Handle Bing Image Cache URLs (th/id/OGC format)
+            // Example: https://www.bing.com/th/id/OGC.20828bc040c2d7dd237de8e0a9803a0e?o=7&pid=1.7&rm=3&rurl=https%3a%2f%2fmedia.tenor.com%2fimages%2f...%2ftenor.gif&ehk=...
+            const bingCacheMatch = url.match(/[?&]rurl=([^&]+)/i);
+            if (bingCacheMatch) {
+                const decodedUrl = decodeURIComponent(bingCacheMatch[1]);
+                console.log('🔍 Extracted Bing cache GIF/image URL:', decodedUrl);
+                return decodedUrl;
+            }
+            
+            // Try to extract mediaurl parameter from Bing search URLs
             const bingMatch = url.match(/[?&]mediaurl=([^&]+)/i);
             if (bingMatch) {
                 const decodedUrl = decodeURIComponent(bingMatch[1]);
@@ -267,7 +276,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return decodedUrl;
             }
             
-            // Try to extract direct image URL from common patterns
+            // Try to extract direct image URL from common patterns (for URLs that already contain image extension)
             const directImageMatch = url.match(/(https?:\/\/[^\s]+?\.(jpg|jpeg|png|gif|webp|bmp|svg))/i);
             if (directImageMatch && !url.includes('bing.com') && !url.includes('google.com')) {
                 console.log('🔍 Extracted direct image URL:', directImageMatch[1]);
@@ -305,15 +314,20 @@ document.addEventListener('DOMContentLoaded', () => {
                         };
                     }
                     
-                    // NEW: Extract direct image URL from search result URLs (Bing, Google, etc.)
+                    // Extract direct image URL from various search result URLs (Bing cache, Google, etc.)
                     const directImageUrl = extractDirectImageUrl(url);
                     if (directImageUrl) {
                         let processedText = text.replace(url, '').trim();
                         if (!processedText) {
-                            processedText = '🖼️ Shared an image';
+                            // Check if it's a GIF
+                            if (directImageUrl.match(/\.(gif)$/i)) {
+                                processedText = '🎬 Shared a GIF';
+                            } else {
+                                processedText = '🖼️ Shared an image';
+                            }
                         }
                         
-                        console.log('🖼️ Image detected from search URL:', directImageUrl);
+                        console.log('🖼️ Image/GIF detected from search URL:', directImageUrl);
                         
                         return {
                             processedText: processedText,
@@ -328,10 +342,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (url.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i)) {
                         let processedText = text.replace(url, '').trim();
                         if (!processedText) {
-                            processedText = '🖼️ Shared an image';
+                            if (url.match(/\.(gif)$/i)) {
+                                processedText = '🎬 Shared a GIF';
+                            } else {
+                                processedText = '🖼️ Shared an image';
+                            }
                         }
                         
-                        console.log('🖼️ Direct image detected:', url);
+                        console.log('🖼️ Direct image/GIF detected:', url);
                         
                         return {
                             processedText: processedText,
@@ -471,7 +489,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return linkedText;
         }
 
-        // ========== EXISTING FUNCTIONS ==========
+        // ========== EXISTING FUNCTIONS (unchanged) ==========
 
         function generateUserId() {
             const id = 'user_' + Math.random().toString(36).substr(2, 9);
