@@ -435,6 +435,40 @@ body {
 .input-controls {
     display: flex;
     gap: 8px;
+    align-items: center;
+}
+
+.voice-recording {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background-color: var(--message-other);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.voice-recording.hidden {
+    display: none !important;
+}
+
+.recording-dot {
+    width: 8px;
+    height: 8px;
+    background-color: #ff4444;
+    border-radius: 50%;
+    animation: pulse-recording 1s infinite;
+}
+
+@keyframes pulse-recording {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+#recording-time {
+    font-weight: 600;
+    min-width: 30px;
 }
 
 .message-input {

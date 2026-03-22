@@ -99,8 +99,14 @@
             <div class="input-area">
                 <div class="input-controls">
                     <button id="emoji-btn" class="btn-icon" title="Add emoji">😊</button>
-                    <button id="media-btn" class="btn-icon" title="Add image/video/audio">🖼️🎬🎤</button>
-                    <input type="file" id="media-input" class="hidden" accept="image/*,video/*,audio/*">
+                    <button id="image-btn" class="btn-icon" title="Upload image">🖼️</button>
+                    <input type="file" id="image-input" class="hidden" accept="image/*">
+                    <button id="voice-btn" class="btn-icon" title="Record voice message">🎤</button>
+                    <div id="voice-recording" class="voice-recording hidden">
+                        <span class="recording-dot">●</span>
+                        <span id="recording-time">0:00</span>
+                        <button id="stop-recording" class="btn-icon" title="Stop recording">⏹️</button>
+                    </div>
                 </div>
                 <input type="text" id="message-input" class="message-input" placeholder="Type a message...">
                 <button id="send-button" class="btn btn-send">Send</button>
