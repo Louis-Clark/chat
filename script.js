@@ -1,24 +1,7 @@
 // Advanced Chat Application Script
 document.addEventListener('DOMContentLoaded', () => {
     console.log('📱 Chat app starting...');
-    
-    // Wait for Firebase to be ready
-    const waitForFirebase = setInterval(() => {
-        if (window.firebaseReady && window.database) {
-            clearInterval(waitForFirebase);
-            console.log('✅ Firebase ready, initializing app...');
-            initializeApp();
-        }
-    }, 100);
-    
-    // Failsafe: initialize after 5 seconds even if not ready
-    setTimeout(() => {
-        if (!window.firebaseReady) {
-            console.log('⚠️ Firebase timeout, initializing anyway');
-            window.database = window.database || {};
-            initializeApp();
-        }
-    }, 5000);
+    initializeApp();
 
     function initializeApp() {
         console.log('🚀 App initializing...');
@@ -385,6 +368,9 @@ document.addEventListener('DOMContentLoaded', () => {
         function displayMessage(message) {
             if (!message) return;
 
+            // Smart auto-scroll: only scroll if already near bottom
+            const atBottom = chatMessages.scrollHeight - chatMessages.scrollTop <= chatMessages.clientHeight + 50;
+
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${message.userId === userId ? 'own' : 'other'}`;
 
@@ -420,7 +406,10 @@ document.addEventListener('DOMContentLoaded', () => {
             messageDiv.innerHTML = content;
 
             chatMessages.appendChild(messageDiv);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
+
+            if (atBottom) {
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
         }
 
         function handleTyping() {

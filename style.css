@@ -266,6 +266,8 @@ body {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    contain: content;
+    will-change: scroll-position;
 }
 
 .message {
