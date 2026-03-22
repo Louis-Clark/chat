@@ -56,6 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let audioChunks = [];
         let recordingStartTime = 0;
         let recordingTimer = null;
+        let audioStream = null;
         let userId = localStorage.getItem('userId') || generateUserId();
         let onlineUsers = new Set();
         let typingUsers = new Set();
@@ -287,8 +288,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         async function startVoiceRecording() {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                mediaRecorder = new MediaRecorder(stream);
+                audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(audioStream);
                 audioChunks = [];
                 recordingStartTime = Date.now();
 
@@ -297,6 +298,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 };
 
                 mediaRecorder.onstop = () => {
+                    // Stop all audio tracks to turn off the microphone
+                    if (audioStream) {
+                        audioStream.getTracks().forEach(track => track.stop());
+                    }
                     const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
                     sendVoiceMessage(audioBlob);
                 };
@@ -315,11 +320,18 @@ document.addEventListener('DOMContentLoaded', () => {
         function stopVoiceRecording() {
             if (mediaRecorder && mediaRecorder.state === 'recording') {
                 mediaRecorder.stop();
-                voiceRecordingUI.classList.add('hidden');
-                voiceBtn.classList.remove('hidden');
-                clearInterval(recordingTimer);
-                console.log('⏹️ Voice recording stopped');
             }
+            
+            // Always close the audio stream to turn off the microphone
+            if (audioStream) {
+                audioStream.getTracks().forEach(track => track.stop());
+                audioStream = null;
+            }
+            
+            voiceRecordingUI.classList.add('hidden');
+            voiceBtn.classList.remove('hidden');
+            clearInterval(recordingTimer);
+            console.log('⏹️ Voice recording stopped and microphone turned off');
         }
 
         function startRecordingTimer() {
