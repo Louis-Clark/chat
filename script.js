@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const chatScreen = document.getElementById('chat-screen');
         const usernameInput = document.getElementById('username-input');
         const enterChatBtn = document.getElementById('enter-chat');
+        const soundToggle = document.getElementById('sound-enabled');
         const messageInput = document.getElementById('message-input');
         const sendButton = document.getElementById('send-button');
         const chatMessages = document.getElementById('chat-messages');
@@ -34,6 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let username = localStorage.getItem('username') || '';
         let userColor = localStorage.getItem('userColor') || '#6C5CE7';
         let isDarkMode = localStorage.getItem('darkMode') === 'true';
+        let soundEnabled = localStorage.getItem('soundEnabled') !== 'false'; // Default to true
         let typingTimeout;
         let mediaRecorder = null;
         let audioChunks = [];
@@ -65,6 +67,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (usernameInput) usernameInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') enterChat();
         });
+        if (soundToggle) {
+            soundToggle.checked = soundEnabled;
+            soundToggle.addEventListener('change', (e) => {
+                soundEnabled = e.target.checked;
+                localStorage.setItem('soundEnabled', soundEnabled);
+            });
+        }
 
         // Event Listeners - Chat
         if (sendButton) sendButton.addEventListener('click', sendMessage);
@@ -129,6 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
             username = name;
             localStorage.setItem('username', username);
             localStorage.setItem('userColor', userColor);
+            localStorage.setItem('soundEnabled', soundEnabled);
             
             try {
                 console.log('👤 User entering chat:', username);
@@ -407,6 +417,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
             chatMessages.appendChild(messageDiv);
 
+            // Play notification sound for messages from other users
+            if (message.userId !== userId) {
+                playNotificationSound();
+            }
+
             if (atBottom) {
                 chatMessages.scrollTop = chatMessages.scrollHeight;
             }
@@ -569,8 +584,35 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.removeItem('username');
             localStorage.removeItem('userColor');
             localStorage.removeItem('darkMode');
+            localStorage.removeItem('soundEnabled');
             localStorage.removeItem('userId');
             location.reload();
+        }
+
+        function playNotificationSound() {
+            if (!soundEnabled) return;
+            
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                // Create a pleasant notification sound
+                oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+                oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1);
+                
+                gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+                
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.3);
+            } catch (e) {
+                // Fallback: try to play a simple beep if Web Audio API fails
+                console.log('Web Audio API not available, skipping notification sound');
+            }
         }
 
         function generateAvatar(name) {
