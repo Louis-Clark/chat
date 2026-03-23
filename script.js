@@ -53,6 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let typingUsers = new Set();
         let isInitialized = false;
         let activeReactionPicker = null; // Track active reaction picker
+        let pendingMediaUrls = new Map(); // Cache for URL type detection
 
         console.log('💾 User ID:', userId);
 
@@ -213,417 +214,99 @@ document.addEventListener('DOMContentLoaded', () => {
         // Store messages data for reference
         let messagesCache = new Map();
 
-        // ========== REACTION FUNCTIONS WITH ALIGNMENT TO LEFT OF MESSAGE FOR OWN MESSAGES ==========
+        // ========== SMART LINK DETECTION WITH META TAGS ==========
         
-        function showReactionPicker(button, messageId, messageElement) {
-            // Remove existing picker
-            if (activeReactionPicker) {
-                activeReactionPicker.remove();
-                activeReactionPicker = null;
+        // Check if URL is a direct media file
+        function isDirectMediaUrl(url) {
+            const mediaExtensions = /\.(jpg|jpeg|png|gif|webp|bmp|svg|mp4|webm|mov|avi|mkv|mp3|wav|ogg|m4a)$/i;
+            if (mediaExtensions.test(url)) {
+                return true;
             }
             
-            // Create reaction picker
-            const picker = document.createElement('div');
-            picker.className = 'reaction-picker';
-            picker.style.cssText = `
-                position: fixed;
-                background: var(--bg-secondary);
-                border-radius: 28px;
-                padding: 8px 12px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                display: flex;
-                gap: 8px;
-                z-index: 10000;
-                border: 1px solid var(--border-color);
-                animation: fadeInUp 0.2s ease;
-                white-space: nowrap;
-            `;
-            
-            // Get button position relative to viewport
-            const rect = button.getBoundingClientRect();
-            
-            // Get the entire message bubble position
-            const messageBubble = messageElement.querySelector('.message-bubble');
-            const bubbleRect = messageBubble ? messageBubble.getBoundingClientRect() : rect;
-            
-            // Calculate picker dimensions
-            const pickerWidth = 280; // Approximate width of picker
-            const pickerHeight = 50; // Approximate height of picker
-            
-            // Calculate vertical position - show above the button by default
-            let top = rect.top - pickerHeight - 10;
-            
-            // Check if it would go off the top of the screen
-            if (top < 10) {
-                // Show below the button instead
-                top = rect.bottom + 10;
-            }
-            
-            // Check if it would go off the bottom of the screen
-            if (top + pickerHeight > window.innerHeight - 10) {
-                top = window.innerHeight - pickerHeight - 10;
-            }
-            
-            // Calculate horizontal position based on message side
-            let left;
-            
-            // Check if this is a message from the current user (right side)
-            if (messageElement.classList.contains('own')) {
-                // For own messages (right side), align the reaction bar to the LEFT edge of the message bubble
-                // This makes it appear to the left of the message
-                left = bubbleRect.left - pickerWidth - 10;
-                
-                // If it goes off the left edge, adjust
-                if (left < 10) {
-                    left = 10;
-                }
-                
-                // Ensure it doesn't go off the right edge (unlikely but just in case)
-                if (left + pickerWidth > window.innerWidth - 10) {
-                    left = window.innerWidth - pickerWidth - 10;
-                }
-            } else {
-                // For other users' messages (left side), align to the right edge of the message bubble
-                left = bubbleRect.right + 10;
-                
-                // Ensure it doesn't go off the right edge
-                if (left + pickerWidth > window.innerWidth - 10) {
-                    left = window.innerWidth - pickerWidth - 10;
-                }
-                
-                // Ensure it doesn't go off the left edge
-                if (left < 10) {
-                    left = 10;
-                }
-            }
-            
-            picker.style.top = `${top}px`;
-            picker.style.left = `${left}px`;
-            
-            // Add common reactions
-            quickReactions.forEach(emoji => {
-                const reactionBtn = document.createElement('button');
-                reactionBtn.textContent = emoji;
-                reactionBtn.style.cssText = `
-                    background: transparent;
-                    border: none;
-                    font-size: 24px;
-                    cursor: pointer;
-                    padding: 4px 8px;
-                    border-radius: 24px;
-                    transition: transform 0.1s ease, background 0.2s ease;
-                `;
-                reactionBtn.onmouseenter = () => {
-                    reactionBtn.style.transform = 'scale(1.2)';
-                    reactionBtn.style.background = 'var(--bg-hover)';
-                };
-                reactionBtn.onmouseleave = () => {
-                    reactionBtn.style.transform = 'scale(1)';
-                    reactionBtn.style.background = 'transparent';
-                };
-                reactionBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    addReaction(messageId, emoji);
-                    picker.remove();
-                    activeReactionPicker = null;
-                };
-                picker.appendChild(reactionBtn);
-            });
-            
-            // Add custom emoji button
-            const customBtn = document.createElement('button');
-            customBtn.textContent = '➕';
-            customBtn.style.cssText = `
-                background: transparent;
-                border: none;
-                font-size: 20px;
-                cursor: pointer;
-                padding: 4px 8px;
-                border-radius: 24px;
-                transition: transform 0.1s ease;
-            `;
-            customBtn.onmouseenter = () => {
-                customBtn.style.transform = 'scale(1.1)';
-                customBtn.style.background = 'var(--bg-hover)';
-            };
-            customBtn.onmouseleave = () => {
-                customBtn.style.transform = 'scale(1)';
-                customBtn.style.background = 'transparent';
-            };
-            customBtn.onclick = (e) => {
-                e.stopPropagation();
-                openCustomEmojiPicker(messageId);
-                picker.remove();
-                activeReactionPicker = null;
-            };
-            picker.appendChild(customBtn);
-            
-            document.body.appendChild(picker);
-            activeReactionPicker = picker;
-        }
-        
-        function openCustomEmojiPicker(messageId) {
-            // Create a more comprehensive emoji picker
-            const modal = document.createElement('div');
-            modal.className = 'emoji-modal';
-            modal.style.cssText = `
-                position: fixed;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                background: rgba(0,0,0,0.5);
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                z-index: 20000;
-                animation: fadeIn 0.2s ease;
-            `;
-            
-            const pickerContainer = document.createElement('div');
-            pickerContainer.style.cssText = `
-                background: var(--bg-primary);
-                border-radius: 12px;
-                padding: 20px;
-                max-width: 400px;
-                width: 90%;
-                max-height: 500px;
-                overflow-y: auto;
-                box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-            `;
-            
-            const title = document.createElement('h3');
-            title.textContent = 'Choose a reaction';
-            title.style.cssText = `
-                margin: 0 0 16px 0;
-                color: var(--text-primary);
-                font-size: 18px;
-            `;
-            pickerContainer.appendChild(title);
-            
-            const emojiGrid = document.createElement('div');
-            emojiGrid.style.cssText = `
-                display: grid;
-                grid-template-columns: repeat(8, 1fr);
-                gap: 8px;
-            `;
-            
-            // Common emojis for reactions
-            const customEmojis = [
-                '👍', '👎', '❤️', '🔥', '🎉', '😢', '😂', '😮',
-                '😡', '🥺', '🙏', '💯', '🤣', '😍', '😎', '🤔',
-                '👀', '💀', '✨', '⭐', '🍿', '🎵', '💪', '🤝',
-                '😭', '😱', '🤯', '🥳', '😤', '💔', '✅', '❌'
+            // Check for known media domains
+            const mediaDomains = [
+                'imgur.com', 'i.imgur.com', 'giphy.com', 'media.giphy.com', 'tenor.com',
+                'cdn.discordapp.com', 'cdn.dribbble.com', 'images.unsplash.com',
+                'i.redd.it', 'i.reddituploads.com', 'ibb.co', 'i.ibb.co', 'cloudinary.com'
             ];
             
-            customEmojis.forEach(emoji => {
-                const emojiBtn = document.createElement('button');
-                emojiBtn.textContent = emoji;
-                emojiBtn.style.cssText = `
-                    background: var(--bg-secondary);
-                    border: 1px solid var(--border-color);
-                    font-size: 28px;
-                    cursor: pointer;
-                    padding: 8px;
-                    border-radius: 8px;
-                    transition: transform 0.1s ease, background 0.2s ease;
-                `;
-                emojiBtn.onmouseenter = () => {
-                    emojiBtn.style.transform = 'scale(1.05)';
-                    emojiBtn.style.background = 'var(--bg-hover)';
-                };
-                emojiBtn.onmouseleave = () => {
-                    emojiBtn.style.transform = 'scale(1)';
-                    emojiBtn.style.background = 'var(--bg-secondary)';
-                };
-                emojiBtn.onclick = () => {
-                    addReaction(messageId, emoji);
-                    modal.remove();
-                };
-                emojiGrid.appendChild(emojiBtn);
-            });
-            
-            pickerContainer.appendChild(emojiGrid);
-            
-            const closeBtn = document.createElement('button');
-            closeBtn.textContent = 'Close';
-            closeBtn.style.cssText = `
-                margin-top: 16px;
-                padding: 8px 16px;
-                background: var(--accent-color);
-                border: none;
-                border-radius: 8px;
-                color: white;
-                cursor: pointer;
-                width: 100%;
-            `;
-            closeBtn.onclick = () => modal.remove();
-            pickerContainer.appendChild(closeBtn);
-            
-            modal.appendChild(pickerContainer);
-            document.body.appendChild(modal);
-            
-            modal.onclick = (e) => {
-                if (e.target === modal) modal.remove();
-            };
-        }
-        
-        function addReaction(messageId, emoji) {
-            const db = window.database;
-            if (!db) return;
-            
-            const messageRef = db.ref(`messages/${messageId}`);
-            messageRef.once('value', (snapshot) => {
-                const messageData = snapshot.val();
-                if (messageData) {
-                    let reactions = messageData.reactions || {};
-                    let userReaction = reactions[emoji] || [];
-                    
-                    if (!userReaction.includes(userId)) {
-                        userReaction.push(userId);
-                        reactions[emoji] = userReaction;
-                        
-                        messageRef.update({ reactions: reactions }, (error) => {
-                            if (error) {
-                                console.error('Error adding reaction:', error);
-                            } else {
-                                console.log(`✅ Reaction ${emoji} added to message ${messageId}`);
-                                // Play reaction sound
-                                if (soundEnabled) {
-                                    playReactionSound();
-                                }
-                            }
-                        });
-                    }
-                }
-            });
-        }
-        
-        function removeReaction(messageId, emoji) {
-            const db = window.database;
-            if (!db) return;
-            
-            const messageRef = db.ref(`messages/${messageId}`);
-            messageRef.once('value', (snapshot) => {
-                const messageData = snapshot.val();
-                if (messageData && messageData.reactions) {
-                    let reactions = { ...messageData.reactions };
-                    let userReaction = reactions[emoji] || [];
-                    
-                    const index = userReaction.indexOf(userId);
-                    if (index > -1) {
-                        userReaction.splice(index, 1);
-                        
-                        if (userReaction.length === 0) {
-                            delete reactions[emoji];
-                        } else {
-                            reactions[emoji] = userReaction;
-                        }
-                        
-                        messageRef.update({ reactions: reactions }, (error) => {
-                            if (error) {
-                                console.error('Error removing reaction:', error);
-                            } else {
-                                console.log(`✅ Reaction ${emoji} removed from message ${messageId}`);
-                            }
-                        });
-                    }
-                }
-            });
-        }
-        
-        function renderReactions(messageId, reactions) {
-            if (!reactions || Object.keys(reactions).length === 0) {
-                return '';
-            }
-            
-            let reactionsHtml = '<div class="message-reactions" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">';
-            
-            for (const [emoji, users] of Object.entries(reactions)) {
-                const count = users.length;
-                const hasUserReacted = users.includes(userId);
-                const reactionClass = hasUserReacted ? 'reaction-badge reacted' : 'reaction-badge';
-                
-                reactionsHtml += `
-                    <div class="${reactionClass}" data-emoji="${emoji}" style="
-                        display: inline-flex;
-                        align-items: center;
-                        gap: 4px;
-                        padding: 2px 8px;
-                        background: ${hasUserReacted ? 'rgba(108, 92, 231, 0.2)' : 'var(--bg-secondary)'};
-                        border-radius: 24px;
-                        cursor: pointer;
-                        font-size: 14px;
-                        transition: background 0.2s ease;
-                        border: 1px solid ${hasUserReacted ? 'var(--accent-color)' : 'var(--border-color)'};
-                    ">
-                        <span style="font-size: 16px;">${emoji}</span>
-                        <span style="font-size: 12px; color: var(--text-secondary);">${count}</span>
-                        ${hasUserReacted ? '<span class="remove-reaction" style="margin-left: 4px; font-size: 12px; opacity: 0.6;">✕</span>' : ''}
-                    </div>
-                `;
-            }
-            
-            reactionsHtml += '</div>';
-            return reactionsHtml;
-        }
-        
-        function playReactionSound() {
-            if (!soundEnabled) return;
-            
             try {
-                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const oscillator = audioContext.createOscillator();
-                const gainNode = audioContext.createGain();
-                
-                oscillator.connect(gainNode);
-                gainNode.connect(audioContext.destination);
-                
-                oscillator.frequency.setValueAtTime(523.25, audioContext.currentTime); // C5 note
-                oscillator.frequency.setValueAtTime(587.33, audioContext.currentTime + 0.1); // D5 note
-                
-                gainNode.gain.setValueAtTime(0.15, audioContext.currentTime);
-                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
-                
-                oscillator.start(audioContext.currentTime);
-                oscillator.stop(audioContext.currentTime + 0.2);
+                const urlObj = new URL(url);
+                const hostname = urlObj.hostname.toLowerCase();
+                if (mediaDomains.some(domain => hostname.includes(domain))) {
+                    return true;
+                }
             } catch (e) {
-                console.log('Web Audio API not available, skipping reaction sound');
-            }
-        }
-
-        // ========== LOAD YOUTUBE IFrame API ==========
-        function loadYouTubeAPI() {
-            if (window.YT && window.YT.Player) {
-                console.log('✅ YouTube API already loaded');
-                return Promise.resolve();
+                return false;
             }
             
-            return new Promise((resolve, reject) => {
-                const tag = document.createElement('script');
-                tag.src = 'https://www.youtube.com/iframe_api';
-                const firstScriptTag = document.getElementsByTagName('script')[0];
-                firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-                
-                window.onYouTubeIframeAPIReady = () => {
-                    console.log('✅ YouTube IFrame API ready');
-                    resolve();
-                };
-                
-                // Timeout after 10 seconds
-                setTimeout(() => {
-                    if (!window.YT) {
-                        reject(new Error('YouTube API load timeout'));
-                    }
-                }, 10000);
-            });
+            return false;
         }
-
-        // Call this when chat starts
-        loadYouTubeAPI().catch(err => console.warn('YouTube API load failed:', err));
-
-        // ========== ENHANCED LINK PREVIEW FUNCTIONS ==========
-
+        
+        // Check if URL is YouTube
+        function isYouTubeUrl(url) {
+            const youtubePatterns = [
+                /(?:youtube\.com\/watch\?v=)([\w-]+)/i,
+                /(?:youtube\.com\/embed\/)([\w-]+)/i,
+                /(?:youtube\.com\/v\/)([\w-]+)/i,
+                /(?:youtube\.com\/live\/)([\w-]+)/i,
+                /(?:youtu\.be\/)([\w-]+)/i,
+                /(?:youtube\.com\/shorts\/)([\w-]+)/i
+            ];
+            return youtubePatterns.some(pattern => pattern.test(url));
+        }
+        
+        // Fetch page metadata to determine content type
+        async function fetchPageMetadata(url) {
+            // Check cache first
+            if (pendingMediaUrls.has(url)) {
+                return pendingMediaUrls.get(url);
+            }
+            
+            // Create a promise for this URL
+            const promise = new Promise((resolve) => {
+                // Timeout after 3 seconds
+                const timeoutId = setTimeout(() => {
+                    resolve({ type: 'link', error: 'timeout' });
+                }, 3000);
+                
+                // Fetch the page headers only (HEAD request is faster)
+                fetch(url, { method: 'HEAD', mode: 'no-cors' })
+                    .then(response => {
+                        clearTimeout(timeoutId);
+                        const contentType = response.headers.get('content-type');
+                        
+                        if (contentType) {
+                            if (contentType.startsWith('image/')) {
+                                resolve({ type: 'image', url: url });
+                            } else if (contentType.startsWith('video/')) {
+                                resolve({ type: 'video', url: url });
+                            } else if (contentType.startsWith('audio/')) {
+                                resolve({ type: 'audio', url: url });
+                            } else {
+                                resolve({ type: 'link' });
+                            }
+                        } else {
+                            resolve({ type: 'link' });
+                        }
+                    })
+                    .catch(() => {
+                        clearTimeout(timeoutId);
+                        // If HEAD fails, treat as regular link
+                        resolve({ type: 'link' });
+                    });
+            });
+            
+            pendingMediaUrls.set(url, promise);
+            
+            // Clean up cache after 1 minute
+            setTimeout(() => {
+                pendingMediaUrls.delete(url);
+            }, 60000);
+            
+            return promise;
+        }
+        
         function extractYouTubeId(url) {
             if (!url) return null;
             
@@ -648,62 +331,24 @@ document.addEventListener('DOMContentLoaded', () => {
             return null;
         }
 
-        // ENHANCED: Extract direct image URL from various search result URLs (Bing, Google, etc.)
-        function extractDirectImageUrl(url) {
-            if (!url) return null;
-            
-            // Handle Bing Image Cache URLs (th/id/OGC format)
-            const bingCacheMatch = url.match(/[?&]rurl=([^&]+)/i);
-            if (bingCacheMatch) {
-                const decodedUrl = decodeURIComponent(bingCacheMatch[1]);
-                console.log('🔍 Extracted Bing cache GIF/image URL:', decodedUrl);
-                return decodedUrl;
-            }
-            
-            // Try to extract mediaurl parameter from Bing search URLs
-            const bingMatch = url.match(/[?&]mediaurl=([^&]+)/i);
-            if (bingMatch) {
-                const decodedUrl = decodeURIComponent(bingMatch[1]);
-                console.log('🔍 Extracted Bing image URL:', decodedUrl);
-                return decodedUrl;
-            }
-            
-            // Try to extract imgurl parameter from Google Images
-            const googleMatch = url.match(/[?&]imgurl=([^&]+)/i);
-            if (googleMatch) {
-                const decodedUrl = decodeURIComponent(googleMatch[1]);
-                console.log('🔍 Extracted Google image URL:', decodedUrl);
-                return decodedUrl;
-            }
-            
-            // Try to extract direct image URL from common patterns
-            const directImageMatch = url.match(/(https?:\/\/[^\s]+?\.(jpg|jpeg|png|gif|webp|bmp|svg))/i);
-            if (directImageMatch && !url.includes('bing.com') && !url.includes('google.com')) {
-                console.log('🔍 Extracted direct image URL:', directImageMatch[1]);
-                return directImageMatch[1];
-            }
-            
-            return null;
-        }
-
-        function detectAndProcessLinks(text) {
+        // Main link detection function
+        async function detectAndProcessLinksAsync(text) {
             if (!text) return { processedText: text, mediaEmbed: null };
             
             const urlRegex = /(https?:\/\/[^\s]+)/g;
             const matches = text.match(urlRegex);
             
-            if (matches) {
-                for (const url of matches) {
-                    // Check for YouTube
+            if (!matches) return { processedText: text, mediaEmbed: null };
+            
+            for (const url of matches) {
+                // Check for YouTube first
+                if (isYouTubeUrl(url)) {
                     const videoId = extractYouTubeId(url);
                     if (videoId) {
                         let processedText = text.replace(url, '').trim();
                         if (!processedText) {
                             processedText = '📺 Shared a YouTube video';
                         }
-                        
-                        console.log('🎬 YouTube video detected:', videoId);
-                        
                         return {
                             processedText: processedText,
                             mediaEmbed: {
@@ -713,51 +358,56 @@ document.addEventListener('DOMContentLoaded', () => {
                             }
                         };
                     }
-                    
-                    // Extract direct image URL from various search result URLs
-                    const directImageUrl = extractDirectImageUrl(url);
-                    if (directImageUrl) {
-                        let processedText = text.replace(url, '').trim();
-                        if (!processedText) {
-                            if (directImageUrl.match(/\.(gif)$/i)) {
-                                processedText = '🎬 Shared a GIF';
-                            } else {
-                                processedText = '🖼️ Shared an image';
-                            }
+                }
+                
+                // Check for direct media URLs
+                if (isDirectMediaUrl(url)) {
+                    let processedText = text.replace(url, '').trim();
+                    if (!processedText) {
+                        if (url.match(/\.(gif)$/i)) {
+                            processedText = '🎬 Shared a GIF';
+                        } else if (url.match(/\.(mp4|webm|mov)$/i)) {
+                            processedText = '🎥 Shared a video';
+                        } else if (url.match(/\.(mp3|wav|ogg)$/i)) {
+                            processedText = '🎵 Shared audio';
+                        } else {
+                            processedText = '🖼️ Shared an image';
                         }
-                        
-                        console.log('🖼️ Image/GIF detected from search URL:', directImageUrl);
-                        
-                        return {
-                            processedText: processedText,
-                            mediaEmbed: {
-                                type: 'image',
-                                url: directImageUrl
-                            }
-                        };
                     }
-                    
-                    // Check for direct image/GIF links
-                    if (url.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i)) {
+                    return {
+                        processedText: processedText,
+                        mediaEmbed: {
+                            type: 'image',
+                            url: url
+                        }
+                    };
+                }
+                
+                // For unknown domains, fetch metadata to check if it's actually media
+                try {
+                    const metadata = await fetchPageMetadata(url);
+                    if (metadata.type === 'image' || metadata.type === 'video' || metadata.type === 'audio') {
                         let processedText = text.replace(url, '').trim();
                         if (!processedText) {
-                            if (url.match(/\.(gif)$/i)) {
-                                processedText = '🎬 Shared a GIF';
-                            } else {
+                            if (metadata.type === 'image') {
                                 processedText = '🖼️ Shared an image';
+                            } else if (metadata.type === 'video') {
+                                processedText = '🎥 Shared a video';
+                            } else if (metadata.type === 'audio') {
+                                processedText = '🎵 Shared audio';
                             }
                         }
-                        
-                        console.log('🖼️ Direct image/GIF detected:', url);
-                        
                         return {
                             processedText: processedText,
                             mediaEmbed: {
-                                type: 'image',
+                                type: metadata.type,
                                 url: url
                             }
                         };
                     }
+                } catch (err) {
+                    // If metadata fetch fails, treat as regular link
+                    console.log('Metadata fetch failed for:', url, err);
                 }
             }
             
@@ -852,18 +502,45 @@ document.addEventListener('DOMContentLoaded', () => {
                         </div>
                     `;
                 case 'image':
-                    return `
-                        <div class="media-embed image-embed" style="margin: 8px 0;">
-                            <img 
-                                src="${embedData.url}" 
-                                alt="Shared image" 
-                                style="max-width: 100%; max-height: 400px; border-radius: 12px; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: transform 0.2s ease;" 
-                                loading="lazy" 
-                                onclick="window.open('${embedData.url}', '_blank')"
-                                onerror="this.style.display='none'; this.parentElement.innerHTML='<div style=\\'padding: 8px; background: rgba(255,0,0,0.1); border-radius: 8px; color: #ff4444;\\'>❌ Failed to load image</div>'"
-                            >
-                        </div>
-                    `;
+                case 'video':
+                case 'audio':
+                    // For images/videos/audio from metadata detection
+                    const isVideo = embedData.type === 'video';
+                    const isAudio = embedData.type === 'audio';
+                    const mediaUrl = embedData.url;
+                    
+                    if (isVideo) {
+                        return `
+                            <div class="media-embed video-embed" style="margin: 8px 0;">
+                                <video controls class="message-video" style="max-width: 100%; max-height: 400px; border-radius: 12px;">
+                                    <source src="${mediaUrl}" type="video/mp4">
+                                    Your browser does not support video playback.
+                                </video>
+                            </div>
+                        `;
+                    } else if (isAudio) {
+                        return `
+                            <div class="media-embed audio-embed" style="margin: 8px 0;">
+                                <audio controls class="message-audio" style="width: 100%;">
+                                    <source src="${mediaUrl}" type="audio/mpeg">
+                                    Your browser does not support audio playback.
+                                </audio>
+                            </div>
+                        `;
+                    } else {
+                        return `
+                            <div class="media-embed image-embed" style="margin: 8px 0;">
+                                <img 
+                                    src="${mediaUrl}" 
+                                    alt="Shared image" 
+                                    style="max-width: 100%; max-height: 400px; border-radius: 12px; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: transform 0.2s ease;" 
+                                    loading="lazy" 
+                                    onclick="window.open('${mediaUrl}', '_blank')"
+                                    onerror="this.style.display='none'; this.parentElement.innerHTML='<div style=\\'padding: 8px; background: rgba(255,0,0,0.1); border-radius: 8px; color: #ff4444;\\'>❌ Failed to load image</div>'"
+                                >
+                            </div>
+                        `;
+                    }
                 default:
                     return '';
             }
@@ -874,15 +551,399 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const urlRegex = /(https?:\/\/[^\s]+)/g;
             const linkedText = text.replace(urlRegex, (url) => {
-                if (extractYouTubeId(url) || 
-                    url.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i) ||
-                    extractDirectImageUrl(url)) {
+                // Don't linkify URLs that are media embeds (they'll be removed anyway)
+                if (isYouTubeUrl(url) || isDirectMediaUrl(url)) {
                     return '';
                 }
-                return `<a href="${url}" target="_blank" style="color: var(--accent-color); text-decoration: underline;" rel="noopener noreferrer">${url}</a>`;
+                // Create a clickable link without any extra HTML that will get escaped
+                return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`;
             });
             
             return linkedText;
+        }
+
+        // ========== LOAD YOUTUBE IFrame API ==========
+        function loadYouTubeAPI() {
+            if (window.YT && window.YT.Player) {
+                console.log('✅ YouTube API already loaded');
+                return Promise.resolve();
+            }
+            
+            return new Promise((resolve, reject) => {
+                const tag = document.createElement('script');
+                tag.src = 'https://www.youtube.com/iframe_api';
+                const firstScriptTag = document.getElementsByTagName('script')[0];
+                firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+                
+                window.onYouTubeIframeAPIReady = () => {
+                    console.log('✅ YouTube IFrame API ready');
+                    resolve();
+                };
+                
+                // Timeout after 10 seconds
+                setTimeout(() => {
+                    if (!window.YT) {
+                        reject(new Error('YouTube API load timeout'));
+                    }
+                }, 10000);
+            });
+        }
+
+        // Call this when chat starts
+        loadYouTubeAPI().catch(err => console.warn('YouTube API load failed:', err));
+
+        // ========== REACTION FUNCTIONS ==========
+        
+        function showReactionPicker(button, messageId, messageElement) {
+            // Remove existing picker
+            if (activeReactionPicker) {
+                activeReactionPicker.remove();
+                activeReactionPicker = null;
+            }
+            
+            // Create reaction picker
+            const picker = document.createElement('div');
+            picker.className = 'reaction-picker';
+            picker.style.cssText = `
+                position: fixed;
+                background: var(--bg-secondary);
+                border-radius: 28px;
+                padding: 8px 12px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                display: flex;
+                gap: 8px;
+                z-index: 10000;
+                border: 1px solid var(--border-color);
+                animation: fadeInUp 0.2s ease;
+                white-space: nowrap;
+            `;
+            
+            // Get button position relative to viewport
+            const rect = button.getBoundingClientRect();
+            
+            // Get the entire message bubble position
+            const messageBubble = messageElement.querySelector('.message-bubble');
+            const bubbleRect = messageBubble ? messageBubble.getBoundingClientRect() : rect;
+            
+            // Calculate picker dimensions
+            const pickerWidth = 280;
+            const pickerHeight = 50;
+            
+            // Calculate vertical position
+            let top = rect.top - pickerHeight - 10;
+            if (top < 10) {
+                top = rect.bottom + 10;
+            }
+            if (top + pickerHeight > window.innerHeight - 10) {
+                top = window.innerHeight - pickerHeight - 10;
+            }
+            
+            // Calculate horizontal position based on message side
+            let left;
+            
+            if (messageElement.classList.contains('own')) {
+                left = bubbleRect.left - pickerWidth - 10;
+                if (left < 10) left = 10;
+                if (left + pickerWidth > window.innerWidth - 10) {
+                    left = window.innerWidth - pickerWidth - 10;
+                }
+            } else {
+                left = bubbleRect.right + 10;
+                if (left + pickerWidth > window.innerWidth - 10) {
+                    left = window.innerWidth - pickerWidth - 10;
+                }
+                if (left < 10) left = 10;
+            }
+            
+            picker.style.top = `${top}px`;
+            picker.style.left = `${left}px`;
+            
+            // Add common reactions
+            quickReactions.forEach(emoji => {
+                const reactionBtn = document.createElement('button');
+                reactionBtn.textContent = emoji;
+                reactionBtn.style.cssText = `
+                    background: transparent;
+                    border: none;
+                    font-size: 24px;
+                    cursor: pointer;
+                    padding: 4px 8px;
+                    border-radius: 24px;
+                    transition: transform 0.1s ease, background 0.2s ease;
+                `;
+                reactionBtn.onmouseenter = () => {
+                    reactionBtn.style.transform = 'scale(1.2)';
+                    reactionBtn.style.background = 'var(--bg-hover)';
+                };
+                reactionBtn.onmouseleave = () => {
+                    reactionBtn.style.transform = 'scale(1)';
+                    reactionBtn.style.background = 'transparent';
+                };
+                reactionBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    addReaction(messageId, emoji);
+                    picker.remove();
+                    activeReactionPicker = null;
+                };
+                picker.appendChild(reactionBtn);
+            });
+            
+            // Add custom emoji button
+            const customBtn = document.createElement('button');
+            customBtn.textContent = '➕';
+            customBtn.style.cssText = `
+                background: transparent;
+                border: none;
+                font-size: 20px;
+                cursor: pointer;
+                padding: 4px 8px;
+                border-radius: 24px;
+                transition: transform 0.1s ease;
+            `;
+            customBtn.onmouseenter = () => {
+                customBtn.style.transform = 'scale(1.1)';
+                customBtn.style.background = 'var(--bg-hover)';
+            };
+            customBtn.onmouseleave = () => {
+                customBtn.style.transform = 'scale(1)';
+                customBtn.style.background = 'transparent';
+            };
+            customBtn.onclick = (e) => {
+                e.stopPropagation();
+                openCustomEmojiPicker(messageId);
+                picker.remove();
+                activeReactionPicker = null;
+            };
+            picker.appendChild(customBtn);
+            
+            document.body.appendChild(picker);
+            activeReactionPicker = picker;
+        }
+        
+        function openCustomEmojiPicker(messageId) {
+            const modal = document.createElement('div');
+            modal.className = 'emoji-modal';
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0,0,0,0.5);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 20000;
+                animation: fadeIn 0.2s ease;
+            `;
+            
+            const pickerContainer = document.createElement('div');
+            pickerContainer.style.cssText = `
+                background: var(--bg-primary);
+                border-radius: 12px;
+                padding: 20px;
+                max-width: 400px;
+                width: 90%;
+                max-height: 500px;
+                overflow-y: auto;
+                box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+            `;
+            
+            const title = document.createElement('h3');
+            title.textContent = 'Choose a reaction';
+            title.style.cssText = `
+                margin: 0 0 16px 0;
+                color: var(--text-primary);
+                font-size: 18px;
+            `;
+            pickerContainer.appendChild(title);
+            
+            const emojiGrid = document.createElement('div');
+            emojiGrid.style.cssText = `
+                display: grid;
+                grid-template-columns: repeat(8, 1fr);
+                gap: 8px;
+            `;
+            
+            const customEmojis = [
+                '👍', '👎', '❤️', '🔥', '🎉', '😢', '😂', '😮',
+                '😡', '🥺', '🙏', '💯', '🤣', '😍', '😎', '🤔',
+                '👀', '💀', '✨', '⭐', '🍿', '🎵', '💪', '🤝',
+                '😭', '😱', '🤯', '🥳', '😤', '💔', '✅', '❌'
+            ];
+            
+            customEmojis.forEach(emoji => {
+                const emojiBtn = document.createElement('button');
+                emojiBtn.textContent = emoji;
+                emojiBtn.style.cssText = `
+                    background: var(--bg-secondary);
+                    border: 1px solid var(--border-color);
+                    font-size: 28px;
+                    cursor: pointer;
+                    padding: 8px;
+                    border-radius: 8px;
+                    transition: transform 0.1s ease, background 0.2s ease;
+                `;
+                emojiBtn.onmouseenter = () => {
+                    emojiBtn.style.transform = 'scale(1.05)';
+                    emojiBtn.style.background = 'var(--bg-hover)';
+                };
+                emojiBtn.onmouseleave = () => {
+                    emojiBtn.style.transform = 'scale(1)';
+                    emojiBtn.style.background = 'var(--bg-secondary)';
+                };
+                emojiBtn.onclick = () => {
+                    addReaction(messageId, emoji);
+                    modal.remove();
+                };
+                emojiGrid.appendChild(emojiBtn);
+            });
+            
+            pickerContainer.appendChild(emojiGrid);
+            
+            const closeBtn = document.createElement('button');
+            closeBtn.textContent = 'Close';
+            closeBtn.style.cssText = `
+                margin-top: 16px;
+                padding: 8px 16px;
+                background: var(--accent-color);
+                border: none;
+                border-radius: 8px;
+                color: white;
+                cursor: pointer;
+                width: 100%;
+            `;
+            closeBtn.onclick = () => modal.remove();
+            pickerContainer.appendChild(closeBtn);
+            
+            modal.appendChild(pickerContainer);
+            document.body.appendChild(modal);
+            
+            modal.onclick = (e) => {
+                if (e.target === modal) modal.remove();
+            };
+        }
+        
+        function addReaction(messageId, emoji) {
+            const db = window.database;
+            if (!db) return;
+            
+            const messageRef = db.ref(`messages/${messageId}`);
+            messageRef.once('value', (snapshot) => {
+                const messageData = snapshot.val();
+                if (messageData) {
+                    let reactions = messageData.reactions || {};
+                    let userReaction = reactions[emoji] || [];
+                    
+                    if (!userReaction.includes(userId)) {
+                        userReaction.push(userId);
+                        reactions[emoji] = userReaction;
+                        
+                        messageRef.update({ reactions: reactions }, (error) => {
+                            if (error) {
+                                console.error('Error adding reaction:', error);
+                            } else {
+                                console.log(`✅ Reaction ${emoji} added to message ${messageId}`);
+                                if (soundEnabled) {
+                                    playReactionSound();
+                                }
+                            }
+                        });
+                    }
+                }
+            });
+        }
+        
+        function removeReaction(messageId, emoji) {
+            const db = window.database;
+            if (!db) return;
+            
+            const messageRef = db.ref(`messages/${messageId}`);
+            messageRef.once('value', (snapshot) => {
+                const messageData = snapshot.val();
+                if (messageData && messageData.reactions) {
+                    let reactions = { ...messageData.reactions };
+                    let userReaction = reactions[emoji] || [];
+                    
+                    const index = userReaction.indexOf(userId);
+                    if (index > -1) {
+                        userReaction.splice(index, 1);
+                        
+                        if (userReaction.length === 0) {
+                            delete reactions[emoji];
+                        } else {
+                            reactions[emoji] = userReaction;
+                        }
+                        
+                        messageRef.update({ reactions: reactions }, (error) => {
+                            if (error) {
+                                console.error('Error removing reaction:', error);
+                            } else {
+                                console.log(`✅ Reaction ${emoji} removed from message ${messageId}`);
+                            }
+                        });
+                    }
+                }
+            });
+        }
+        
+        function renderReactions(messageId, reactions) {
+            if (!reactions || Object.keys(reactions).length === 0) {
+                return '';
+            }
+            
+            let reactionsHtml = '<div class="message-reactions" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">';
+            
+            for (const [emoji, users] of Object.entries(reactions)) {
+                const count = users.length;
+                const hasUserReacted = users.includes(userId);
+                
+                reactionsHtml += `
+                    <div class="${hasUserReacted ? 'reaction-badge reacted' : 'reaction-badge'}" data-emoji="${emoji}" style="
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 4px;
+                        padding: 2px 8px;
+                        background: ${hasUserReacted ? 'rgba(108, 92, 231, 0.2)' : 'var(--bg-secondary)'};
+                        border-radius: 24px;
+                        cursor: pointer;
+                        font-size: 14px;
+                        transition: background 0.2s ease;
+                        border: 1px solid ${hasUserReacted ? 'var(--accent-color)' : 'var(--border-color)'};
+                    ">
+                        <span style="font-size: 16px;">${escapeHtml(emoji)}</span>
+                        <span style="font-size: 12px; color: var(--text-secondary);">${count}</span>
+                        ${hasUserReacted ? '<span class="remove-reaction" style="margin-left: 4px; font-size: 12px; opacity: 0.6;">✕</span>' : ''}
+                    </div>
+                `;
+            }
+            
+            reactionsHtml += '</div>';
+            return reactionsHtml;
+        }
+        
+        function playReactionSound() {
+            if (!soundEnabled) return;
+            
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.frequency.setValueAtTime(523.25, audioContext.currentTime);
+                oscillator.frequency.setValueAtTime(587.33, audioContext.currentTime + 0.1);
+                
+                gainNode.gain.setValueAtTime(0.15, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+                
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.2);
+            } catch (e) {
+                console.log('Web Audio API not available, skipping reaction sound');
+            }
         }
 
         // ========== UNIFIED MEDIA UPLOAD FUNCTION ==========
@@ -891,7 +952,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const file = e.target.files[0];
             if (!file) return;
 
-            // Determine file type and validate
             let mediaType = '';
             let defaultText = '';
             let maxSize = 0;
@@ -899,22 +959,21 @@ document.addEventListener('DOMContentLoaded', () => {
             if (file.type.startsWith('image/')) {
                 mediaType = 'image';
                 defaultText = '📷 Shared an image';
-                maxSize = 20 * 1024 * 1024; // 20MB for images
+                maxSize = 20 * 1024 * 1024;
             } else if (file.type.startsWith('video/')) {
                 mediaType = 'video';
                 defaultText = '🎥 Shared a video';
-                maxSize = 100 * 1024 * 1024; // 100MB for videos
+                maxSize = 100 * 1024 * 1024;
             } else if (file.type.startsWith('audio/')) {
                 mediaType = 'audio';
                 defaultText = '🎵 Shared an audio file';
-                maxSize = 50 * 1024 * 1024; // 50MB for audio
+                maxSize = 50 * 1024 * 1024;
             } else {
                 alert('Unsupported file type. Please upload an image, video, or audio file.');
                 fileInput.value = '';
                 return;
             }
 
-            // Check file size
             if (file.size > maxSize) {
                 const sizeMB = Math.round(maxSize / (1024 * 1024));
                 alert(`File is too large. Maximum size is ${sizeMB}MB.`);
@@ -922,15 +981,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // Upload to Cloudinary
             uploadToCloudinary(file, mediaType, defaultText);
-            
-            // Reset file input
             fileInput.value = '';
         }
 
         function uploadToCloudinary(file, mediaType, defaultText) {
-            // Disable upload button and show loading state
             if (uploadBtn) {
                 uploadBtn.disabled = true;
                 uploadBtn.textContent = '⏳';
@@ -967,12 +1022,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         isDeleted: false,
                         isEdited: false
                     }, (error) => {
-                        // Re-enable upload button
                         if (uploadBtn) {
                             uploadBtn.disabled = false;
                             uploadBtn.textContent = '📎';
                         }
-
                         if (error) {
                             console.error('Error saving message:', error);
                             alert('Error saving message: ' + error.message);
@@ -981,7 +1034,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     });
                 } else {
-                    // Re-enable upload button if no database
                     if (uploadBtn) {
                         uploadBtn.disabled = false;
                         uploadBtn.textContent = '📎';
@@ -1002,12 +1054,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         async function startVoiceRecording() {
             try {
-                // Reset any existing recording state
                 if (mediaRecorder && mediaRecorder.state === 'recording') {
                     stopVoiceRecording();
                 }
                 
-                // Close any existing stream
                 if (audioStream) {
                     audioStream.getTracks().forEach(track => track.stop());
                     audioStream = null;
@@ -1033,7 +1083,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         console.log('No audio data recorded');
                     }
                     
-                    // Clean up
                     if (audioStream) {
                         audioStream.getTracks().forEach(track => track.stop());
                         audioStream = null;
@@ -1041,14 +1090,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     mediaRecorder = null;
                     audioChunks = [];
                     
-                    // Hide recording UI and show voice button
                     if (voiceRecordingUI) voiceRecordingUI.classList.add('hidden');
                     if (voiceBtn) voiceBtn.classList.remove('hidden');
                     if (recordingTimer) clearInterval(recordingTimer);
                     recordingTimer = null;
                 };
 
-                mediaRecorder.start(100); // Collect data in 100ms chunks
+                mediaRecorder.start(100);
                 if (voiceRecordingUI) voiceRecordingUI.classList.remove('hidden');
                 if (voiceBtn) voiceBtn.classList.add('hidden');
                 startRecordingTimer();
@@ -1056,7 +1104,6 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (err) {
                 console.error('Error accessing microphone:', err);
                 alert('Please allow microphone access to record voice messages.');
-                // Reset UI on error
                 if (voiceRecordingUI) voiceRecordingUI.classList.add('hidden');
                 if (voiceBtn) voiceBtn.classList.remove('hidden');
             }
@@ -1067,7 +1114,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log('⏹️ Stopping voice recording...');
                 mediaRecorder.stop();
             } else {
-                // Clean up even if no recording was active
                 if (voiceRecordingUI) voiceRecordingUI.classList.add('hidden');
                 if (voiceBtn) voiceBtn.classList.remove('hidden');
                 if (recordingTimer) clearInterval(recordingTimer);
@@ -1093,13 +1139,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function sendVoiceMessage(audioBlob) {
-            // Don't send empty recordings
             if (audioBlob.size < 1000) {
                 console.log('Recording too short, not sending');
                 return;
             }
             
-            // Disable voice button during upload
             if (voiceBtn) voiceBtn.disabled = true;
             
             const formData = new FormData();
@@ -1134,7 +1178,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         isEdited: false
                     }, (error) => {
                         if (voiceBtn) voiceBtn.disabled = false;
-                        
                         if (error) {
                             console.error('Error saving voice message:', error);
                             alert('Error saving voice message: ' + error.message);
@@ -1153,7 +1196,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        // ========== EXISTING FUNCTIONS ==========
+        // ========== CORE FUNCTIONS ==========
 
         function generateUserId() {
             const id = 'user_' + Math.random().toString(36).substr(2, 9);
@@ -1221,7 +1264,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        function sendMessage() {
+        async function sendMessage() {
             const text = messageInput.value.trim();
             if (!text || !isInitialized) {
                 console.log('Cannot send message - text empty or not initialized');
@@ -1239,7 +1282,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 sendButton.disabled = true;
                 sendButton.textContent = '⏳';
 
-                const { processedText, mediaEmbed } = detectAndProcessLinks(text);
+                // Use async link detection
+                const { processedText, mediaEmbed } = await detectAndProcessLinksAsync(text);
                 
                 console.log('📝 Processed message:', { originalText: text, processedText, mediaEmbed });
 
@@ -1259,7 +1303,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     isEdited: false,
                     editHistory: [],
                     mediaEmbed: mediaEmbed,
-                    reactions: {} // Initialize reactions object
+                    reactions: {}
                 };
 
                 db.ref('messages').push(messageData, function(error) {
@@ -1352,7 +1396,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        function saveEditedMessage() {
+        async function saveEditedMessage() {
             const newText = messageInput.value.trim();
             if (!newText || !currentEdit) return;
             
@@ -1372,7 +1416,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 sendButton.disabled = true;
                 sendButton.textContent = '⏳';
                 
-                const { processedText, mediaEmbed } = detectAndProcessLinks(newText);
+                const { processedText, mediaEmbed } = await detectAndProcessLinksAsync(newText);
                 
                 const messageRef = db.ref(`messages/${currentEdit.id}`);
                 messageRef.once('value', (snapshot) => {
@@ -1446,7 +1490,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             deletedAt: Date.now(),
                             originalText: messageData.text,
                             mediaEmbed: null,
-                            reactions: null // Remove reactions when message is deleted
+                            reactions: null
                         }, (error) => {
                             if (error) {
                                 console.error('Error deleting message:', error);
@@ -1556,14 +1600,26 @@ document.addEventListener('DOMContentLoaded', () => {
                     editedBadge = '<span class="edited-badge" style="font-size: 10px; color: var(--text-secondary); margin-left: 5px;" title="Message was edited">(edited)</span>';
                 }
                 
+                // Process mentions and links
                 const { mentionedUsers } = processMentions(textContent);
-                const linkedText = linkifyAndProcessText(textContent);
-                const escapedText = escapeHtml(linkedText);
-                const highlightedText = highlightMentions(escapedText);
-                content += `<div class="message-text">${highlightedText}${editedBadge}</div>`;
+                let processedText = textContent;
+                
+                // Apply linkify (this adds HTML links)
+                processedText = linkifyAndProcessText(processedText);
+                
+                // Apply mention highlighting
+                processedText = highlightMentions(processedText);
+                
+                // Escape HTML except for our generated tags
+                // We need to preserve <a> and <span> tags that we just created
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = processedText;
+                
+                // Get the text content without our HTML tags for mention detection
+                // But keep the HTML for display
+                content += `<div class="message-text">${tempDiv.innerHTML}${editedBadge}</div>`;
             }
             
-            // Add reactions if they exist
             if (message.reactions && !message.isDeleted) {
                 content += renderReactions(messageId, message.reactions);
             }
@@ -1981,7 +2037,7 @@ document.addEventListener('DOMContentLoaded', () => {
         function highlightMentions(text) {
             if (!text) return text;
             
-            return text.replace(/@(\w+)/g, '<span class="mention" style="background-color: rgba(108, 92, 231, 0.2); border-radius: 4px; padding: 0 2px;">@$1</span>');
+            return text.replace(/@(\w+)/g, '<span class="mention">@$1</span>');
         }
 
         function isUserMentioned(mentionedUsers) {
