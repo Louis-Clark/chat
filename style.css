@@ -4,9 +4,31 @@
     box-sizing: border-box;
 }
 
+/* Additional button reset to remove all default button styling */
+button {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    outline: none;
+}
+
+button:focus {
+    outline: none;
+}
+
+button::-moz-focus-inner {
+    border: 0;
+    padding: 0;
+}
+
 :root {
     --bg-primary: #ffffff;
     --bg-secondary: #f5f7fa;
+    --bg-hover: rgba(108, 92, 231, 0.1);
     --text-primary: #1a1a1a;
     --text-secondary: #666666;
     --border-color: #e0e0e0;
@@ -22,6 +44,7 @@
 body.dark-mode {
     --bg-primary: #1a1a1a;
     --bg-secondary: #2d2d2d;
+    --bg-hover: rgba(108, 92, 231, 0.2);
     --text-primary: #ffffff;
     --text-secondary: #aaaaaa;
     --border-color: #444444;
@@ -342,6 +365,7 @@ body {
     animation: messageIn 0.3s ease;
     max-width: 70%;
     gap: 8px;
+    position: relative;
 }
 
 .message.own {
@@ -424,6 +448,10 @@ body {
     opacity: 0.7;
 }
 
+/* ============================================ */
+/* IMPROVED ACTION BUTTONS - NO WHITE SQUARES */
+/* ============================================ */
+
 /* Message Actions Container */
 .message-actions {
     display: flex;
@@ -432,39 +460,270 @@ body {
     align-items: center;
 }
 
-/* Action Buttons */
-.reply-btn, .edit-btn, .delete-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
+/* Force all action buttons to have no background, border, or outline */
+.reply-btn, 
+.edit-btn, 
+.delete-btn, 
+.add-reaction-btn,
+.message-actions button {
+    background: none !important;
+    background-color: transparent !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    appearance: none !important;
+    cursor: pointer !important;
     font-size: 12px;
-    padding: 2px 4px;
-    border-radius: 3px;
+    padding: 4px 6px;
+    border-radius: 4px;
     opacity: 0.6;
     transition: all 0.2s ease;
     color: var(--text-secondary);
+    line-height: 1;
+    margin: 0;
 }
 
-.reply-btn:hover, .edit-btn:hover, .delete-btn:hover {
+/* Specific styling for reaction button */
+.add-reaction-btn {
+    font-size: 14px;
+    padding: 4px 6px;
+    margin-left: 2px;
+}
+
+/* Hover states - only add a subtle background, no white */
+.reply-btn:hover, 
+.edit-btn:hover, 
+.delete-btn:hover, 
+.add-reaction-btn:hover,
+.message-actions button:hover {
     opacity: 1;
-    background-color: rgba(0, 0, 0, 0.1);
+    background-color: rgba(0, 0, 0, 0.08) !important;
     transform: scale(1.05);
 }
 
-.reply-btn:active, .edit-btn:active, .delete-btn:active {
+/* Active/click state */
+.reply-btn:active, 
+.edit-btn:active, 
+.delete-btn:active, 
+.add-reaction-btn:active,
+.message-actions button:active {
     transform: scale(0.95);
 }
 
-.message.own .reply-btn,
-.message.own .edit-btn,
-.message.own .delete-btn {
-    color: var(--text-primary);
+/* Focus states - no white square, only subtle ring for accessibility */
+.reply-btn:focus,
+.edit-btn:focus,
+.delete-btn:focus,
+.add-reaction-btn:focus,
+.message-actions button:focus {
+    outline: none !important;
+    box-shadow: none !important;
 }
 
+/* Focus visible - for keyboard navigation (accessibility) */
+.reply-btn:focus-visible,
+.edit-btn:focus-visible,
+.delete-btn:focus-visible,
+.add-reaction-btn:focus-visible,
+.message-actions button:focus-visible {
+    outline: 2px solid var(--accent-color) !important;
+    outline-offset: 2px !important;
+    border-radius: 4px !important;
+}
+
+/* Dark mode adjustments */
+body.dark-mode .reply-btn:hover,
+body.dark-mode .edit-btn:hover,
+body.dark-mode .delete-btn:hover,
+body.dark-mode .add-reaction-btn:hover,
+body.dark-mode .message-actions button:hover {
+    background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Own messages (right side) - adjust hover background */
 .message.own .reply-btn:hover,
 .message.own .edit-btn:hover,
-.message.own .delete-btn:hover {
-    background-color: rgba(255, 255, 255, 0.2);
+.message.own .delete-btn:hover,
+.message.own .add-reaction-btn:hover,
+.message.own .message-actions button:hover {
+    background-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+/* Override any potential button styles from other elements */
+button.add-reaction-btn,
+button.reply-btn,
+button.edit-btn,
+button.delete-btn {
+    background: transparent !important;
+    border: none !important;
+}
+
+/* Remove any default button background in all states */
+button.add-reaction-btn:active,
+button.add-reaction-btn:focus,
+button.reply-btn:active,
+button.reply-btn:focus,
+button.edit-btn:active,
+button.edit-btn:focus,
+button.delete-btn:active,
+button.delete-btn:focus {
+    background: transparent !important;
+    background-color: transparent !important;
+}
+
+/* Reaction Badges */
+.message-reactions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.reaction-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    background: var(--bg-secondary);
+    border-radius: 24px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+    border: 1px solid var(--border-color);
+}
+
+.reaction-badge:hover {
+    transform: scale(1.05);
+    background: var(--bg-hover);
+}
+
+.reaction-badge.reacted {
+    background: rgba(108, 92, 231, 0.2);
+    border-color: var(--accent-color);
+}
+
+.reaction-badge span:first-child {
+    font-size: 16px;
+}
+
+.reaction-badge span:last-child {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.remove-reaction {
+    margin-left: 4px;
+    font-size: 12px;
+    opacity: 0.6;
+    transition: opacity 0.2s ease;
+}
+
+.remove-reaction:hover {
+    opacity: 1;
+}
+
+/* Reaction Picker */
+.reaction-picker {
+    position: fixed;
+    background: var(--bg-secondary);
+    border-radius: 28px;
+    padding: 8px 12px;
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    gap: 8px;
+    z-index: 10000;
+    border: 1px solid var(--border-color);
+    animation: fadeInUp 0.2s ease;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.reaction-picker button {
+    background: transparent;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 24px;
+    transition: transform 0.1s ease, background 0.2s ease;
+}
+
+.reaction-picker button:hover {
+    transform: scale(1.2);
+    background: var(--bg-hover);
+}
+
+/* Emoji Modal */
+.emoji-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 20000;
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.emoji-modal > div {
+    background: var(--bg-primary);
+    border-radius: 12px;
+    padding: 20px;
+    max-width: 400px;
+    width: 90%;
+    max-height: 500px;
+    overflow-y: auto;
+    box-shadow: var(--shadow-lg);
+}
+
+.emoji-modal h3 {
+    margin: 0 0 16px 0;
+    color: var(--text-primary);
+    font-size: 18px;
+}
+
+.emoji-modal .emoji-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 8px;
+}
+
+.emoji-modal button {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    font-size: 28px;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+}
+
+.emoji-modal button:hover {
+    transform: scale(1.05);
+    background: var(--bg-hover);
 }
 
 /* Media Messages */
@@ -542,18 +801,14 @@ body {
 
 /* Mention highlighting */
 .mention {
-    background-color: #fff3cd;
-    color: #856404;
-    padding: 2px 4px;
-    border-radius: 3px;
+    background-color: rgba(108, 92, 231, 0.2);
+    border-radius: 4px;
+    padding: 0 2px;
     font-weight: bold;
-    border: 1px solid #ffeaa7;
 }
 
 body.dark-mode .mention {
-    background-color: #4a3c1d;
-    color: #ffdd57;
-    border-color: #7c6c3a;
+    background-color: rgba(108, 92, 231, 0.3);
 }
 
 /* Reply system */
@@ -986,6 +1241,15 @@ body.dark-mode .cancel-edit:hover {
         padding: 6px;
         font-size: 18px;
     }
+    
+    .reaction-picker {
+        padding: 6px 10px;
+    }
+    
+    .reaction-picker button {
+        font-size: 20px;
+        padding: 3px 6px;
+    }
 }
 
 @media (max-width: 480px) {
@@ -1019,7 +1283,7 @@ body.dark-mode .cancel-edit:hover {
         height: 35px;
     }
     
-    .reply-btn, .edit-btn, .delete-btn {
+    .reply-btn, .edit-btn, .delete-btn, .add-reaction-btn {
         font-size: 10px;
         padding: 2px 3px;
     }
@@ -1055,6 +1319,25 @@ body.dark-mode .cancel-edit:hover {
     .message-image {
         max-height: 200px;
     }
+    
+    .reaction-picker {
+        gap: 4px;
+        padding: 4px 8px;
+    }
+    
+    .reaction-picker button {
+        font-size: 18px;
+        padding: 2px 5px;
+    }
+    
+    .reaction-badge {
+        padding: 2px 6px;
+        font-size: 12px;
+    }
+    
+    .reaction-badge span:first-child {
+        font-size: 14px;
+    }
 }
 
 /* Print styles */
@@ -1063,7 +1346,9 @@ body.dark-mode .cancel-edit:hover {
     .chat-header,
     .online-users-container,
     .typing-indicator,
-    .btn-icon {
+    .btn-icon,
+    .reaction-picker,
+    .add-reaction-btn {
         display: none;
     }
     

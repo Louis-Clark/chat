@@ -52,6 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let onlineUsers = new Set();
         let typingUsers = new Set();
         let isInitialized = false;
+        let activeReactionPicker = null; // Track active reaction picker
 
         console.log('💾 User ID:', userId);
 
@@ -67,6 +68,9 @@ document.addEventListener('DOMContentLoaded', () => {
             listenForMessages();
             isInitialized = true;
         }
+
+        // Common emojis for quick reactions
+        const quickReactions = ['👍', '❤️', '😂', '😮', '😢', '🔥', '🎉', '👎'];
 
         // Event Listeners - Setup
         if (enterChatBtn) enterChatBtn.addEventListener('click', enterChat);
@@ -120,7 +124,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (voiceBtn) voiceBtn.addEventListener('click', startVoiceRecording);
         if (stopRecordingBtn) stopRecordingBtn.addEventListener('click', stopVoiceRecording);
 
-        // Event delegation for reply, edit, and delete buttons
+        // Event delegation for reply, edit, delete, and reaction buttons
         if (chatMessages) chatMessages.addEventListener('click', (e) => {
             const messageElement = e.target.closest('.message');
             if (!messageElement) return;
@@ -148,6 +152,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (messageData && messageData.userId === userId) {
                     deleteMessage(messageId);
                 }
+            }
+            
+            // Reaction button - open reaction picker
+            if (e.target.classList.contains('add-reaction-btn') || e.target.closest('.add-reaction-btn')) {
+                const btn = e.target.closest('.add-reaction-btn');
+                e.stopPropagation();
+                showReactionPicker(btn, messageId, messageElement);
+            }
+            
+            // Remove reaction button
+            if (e.target.classList.contains('remove-reaction') || e.target.closest('.remove-reaction')) {
+                const reactionEmoji = e.target.closest('.reaction-badge').getAttribute('data-emoji');
+                const messageId = e.target.closest('.message').id.replace('message-', '');
+                e.stopPropagation();
+                removeReaction(messageId, reactionEmoji);
+            }
+        });
+
+        // Close reaction picker when clicking outside
+        document.addEventListener('click', (e) => {
+            if (activeReactionPicker && !activeReactionPicker.contains(e.target)) {
+                activeReactionPicker.remove();
+                activeReactionPicker = null;
             }
         });
 
@@ -185,6 +212,385 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Store messages data for reference
         let messagesCache = new Map();
+
+        // ========== REACTION FUNCTIONS WITH ALIGNMENT TO LEFT OF MESSAGE FOR OWN MESSAGES ==========
+        
+        function showReactionPicker(button, messageId, messageElement) {
+            // Remove existing picker
+            if (activeReactionPicker) {
+                activeReactionPicker.remove();
+                activeReactionPicker = null;
+            }
+            
+            // Create reaction picker
+            const picker = document.createElement('div');
+            picker.className = 'reaction-picker';
+            picker.style.cssText = `
+                position: fixed;
+                background: var(--bg-secondary);
+                border-radius: 28px;
+                padding: 8px 12px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                display: flex;
+                gap: 8px;
+                z-index: 10000;
+                border: 1px solid var(--border-color);
+                animation: fadeInUp 0.2s ease;
+                white-space: nowrap;
+            `;
+            
+            // Get button position relative to viewport
+            const rect = button.getBoundingClientRect();
+            
+            // Get the entire message bubble position
+            const messageBubble = messageElement.querySelector('.message-bubble');
+            const bubbleRect = messageBubble ? messageBubble.getBoundingClientRect() : rect;
+            
+            // Calculate picker dimensions
+            const pickerWidth = 280; // Approximate width of picker
+            const pickerHeight = 50; // Approximate height of picker
+            
+            // Calculate vertical position - show above the button by default
+            let top = rect.top - pickerHeight - 10;
+            
+            // Check if it would go off the top of the screen
+            if (top < 10) {
+                // Show below the button instead
+                top = rect.bottom + 10;
+            }
+            
+            // Check if it would go off the bottom of the screen
+            if (top + pickerHeight > window.innerHeight - 10) {
+                top = window.innerHeight - pickerHeight - 10;
+            }
+            
+            // Calculate horizontal position based on message side
+            let left;
+            
+            // Check if this is a message from the current user (right side)
+            if (messageElement.classList.contains('own')) {
+                // For own messages (right side), align the reaction bar to the LEFT edge of the message bubble
+                // This makes it appear to the left of the message
+                left = bubbleRect.left - pickerWidth - 10;
+                
+                // If it goes off the left edge, adjust
+                if (left < 10) {
+                    left = 10;
+                }
+                
+                // Ensure it doesn't go off the right edge (unlikely but just in case)
+                if (left + pickerWidth > window.innerWidth - 10) {
+                    left = window.innerWidth - pickerWidth - 10;
+                }
+            } else {
+                // For other users' messages (left side), align to the right edge of the message bubble
+                left = bubbleRect.right + 10;
+                
+                // Ensure it doesn't go off the right edge
+                if (left + pickerWidth > window.innerWidth - 10) {
+                    left = window.innerWidth - pickerWidth - 10;
+                }
+                
+                // Ensure it doesn't go off the left edge
+                if (left < 10) {
+                    left = 10;
+                }
+            }
+            
+            picker.style.top = `${top}px`;
+            picker.style.left = `${left}px`;
+            
+            // Add common reactions
+            quickReactions.forEach(emoji => {
+                const reactionBtn = document.createElement('button');
+                reactionBtn.textContent = emoji;
+                reactionBtn.style.cssText = `
+                    background: transparent;
+                    border: none;
+                    font-size: 24px;
+                    cursor: pointer;
+                    padding: 4px 8px;
+                    border-radius: 24px;
+                    transition: transform 0.1s ease, background 0.2s ease;
+                `;
+                reactionBtn.onmouseenter = () => {
+                    reactionBtn.style.transform = 'scale(1.2)';
+                    reactionBtn.style.background = 'var(--bg-hover)';
+                };
+                reactionBtn.onmouseleave = () => {
+                    reactionBtn.style.transform = 'scale(1)';
+                    reactionBtn.style.background = 'transparent';
+                };
+                reactionBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    addReaction(messageId, emoji);
+                    picker.remove();
+                    activeReactionPicker = null;
+                };
+                picker.appendChild(reactionBtn);
+            });
+            
+            // Add custom emoji button
+            const customBtn = document.createElement('button');
+            customBtn.textContent = '➕';
+            customBtn.style.cssText = `
+                background: transparent;
+                border: none;
+                font-size: 20px;
+                cursor: pointer;
+                padding: 4px 8px;
+                border-radius: 24px;
+                transition: transform 0.1s ease;
+            `;
+            customBtn.onmouseenter = () => {
+                customBtn.style.transform = 'scale(1.1)';
+                customBtn.style.background = 'var(--bg-hover)';
+            };
+            customBtn.onmouseleave = () => {
+                customBtn.style.transform = 'scale(1)';
+                customBtn.style.background = 'transparent';
+            };
+            customBtn.onclick = (e) => {
+                e.stopPropagation();
+                openCustomEmojiPicker(messageId);
+                picker.remove();
+                activeReactionPicker = null;
+            };
+            picker.appendChild(customBtn);
+            
+            document.body.appendChild(picker);
+            activeReactionPicker = picker;
+        }
+        
+        function openCustomEmojiPicker(messageId) {
+            // Create a more comprehensive emoji picker
+            const modal = document.createElement('div');
+            modal.className = 'emoji-modal';
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0,0,0,0.5);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 20000;
+                animation: fadeIn 0.2s ease;
+            `;
+            
+            const pickerContainer = document.createElement('div');
+            pickerContainer.style.cssText = `
+                background: var(--bg-primary);
+                border-radius: 12px;
+                padding: 20px;
+                max-width: 400px;
+                width: 90%;
+                max-height: 500px;
+                overflow-y: auto;
+                box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+            `;
+            
+            const title = document.createElement('h3');
+            title.textContent = 'Choose a reaction';
+            title.style.cssText = `
+                margin: 0 0 16px 0;
+                color: var(--text-primary);
+                font-size: 18px;
+            `;
+            pickerContainer.appendChild(title);
+            
+            const emojiGrid = document.createElement('div');
+            emojiGrid.style.cssText = `
+                display: grid;
+                grid-template-columns: repeat(8, 1fr);
+                gap: 8px;
+            `;
+            
+            // Common emojis for reactions
+            const customEmojis = [
+                '👍', '👎', '❤️', '🔥', '🎉', '😢', '😂', '😮',
+                '😡', '🥺', '🙏', '💯', '🤣', '😍', '😎', '🤔',
+                '👀', '💀', '✨', '⭐', '🍿', '🎵', '💪', '🤝',
+                '😭', '😱', '🤯', '🥳', '😤', '💔', '✅', '❌'
+            ];
+            
+            customEmojis.forEach(emoji => {
+                const emojiBtn = document.createElement('button');
+                emojiBtn.textContent = emoji;
+                emojiBtn.style.cssText = `
+                    background: var(--bg-secondary);
+                    border: 1px solid var(--border-color);
+                    font-size: 28px;
+                    cursor: pointer;
+                    padding: 8px;
+                    border-radius: 8px;
+                    transition: transform 0.1s ease, background 0.2s ease;
+                `;
+                emojiBtn.onmouseenter = () => {
+                    emojiBtn.style.transform = 'scale(1.05)';
+                    emojiBtn.style.background = 'var(--bg-hover)';
+                };
+                emojiBtn.onmouseleave = () => {
+                    emojiBtn.style.transform = 'scale(1)';
+                    emojiBtn.style.background = 'var(--bg-secondary)';
+                };
+                emojiBtn.onclick = () => {
+                    addReaction(messageId, emoji);
+                    modal.remove();
+                };
+                emojiGrid.appendChild(emojiBtn);
+            });
+            
+            pickerContainer.appendChild(emojiGrid);
+            
+            const closeBtn = document.createElement('button');
+            closeBtn.textContent = 'Close';
+            closeBtn.style.cssText = `
+                margin-top: 16px;
+                padding: 8px 16px;
+                background: var(--accent-color);
+                border: none;
+                border-radius: 8px;
+                color: white;
+                cursor: pointer;
+                width: 100%;
+            `;
+            closeBtn.onclick = () => modal.remove();
+            pickerContainer.appendChild(closeBtn);
+            
+            modal.appendChild(pickerContainer);
+            document.body.appendChild(modal);
+            
+            modal.onclick = (e) => {
+                if (e.target === modal) modal.remove();
+            };
+        }
+        
+        function addReaction(messageId, emoji) {
+            const db = window.database;
+            if (!db) return;
+            
+            const messageRef = db.ref(`messages/${messageId}`);
+            messageRef.once('value', (snapshot) => {
+                const messageData = snapshot.val();
+                if (messageData) {
+                    let reactions = messageData.reactions || {};
+                    let userReaction = reactions[emoji] || [];
+                    
+                    if (!userReaction.includes(userId)) {
+                        userReaction.push(userId);
+                        reactions[emoji] = userReaction;
+                        
+                        messageRef.update({ reactions: reactions }, (error) => {
+                            if (error) {
+                                console.error('Error adding reaction:', error);
+                            } else {
+                                console.log(`✅ Reaction ${emoji} added to message ${messageId}`);
+                                // Play reaction sound
+                                if (soundEnabled) {
+                                    playReactionSound();
+                                }
+                            }
+                        });
+                    }
+                }
+            });
+        }
+        
+        function removeReaction(messageId, emoji) {
+            const db = window.database;
+            if (!db) return;
+            
+            const messageRef = db.ref(`messages/${messageId}`);
+            messageRef.once('value', (snapshot) => {
+                const messageData = snapshot.val();
+                if (messageData && messageData.reactions) {
+                    let reactions = { ...messageData.reactions };
+                    let userReaction = reactions[emoji] || [];
+                    
+                    const index = userReaction.indexOf(userId);
+                    if (index > -1) {
+                        userReaction.splice(index, 1);
+                        
+                        if (userReaction.length === 0) {
+                            delete reactions[emoji];
+                        } else {
+                            reactions[emoji] = userReaction;
+                        }
+                        
+                        messageRef.update({ reactions: reactions }, (error) => {
+                            if (error) {
+                                console.error('Error removing reaction:', error);
+                            } else {
+                                console.log(`✅ Reaction ${emoji} removed from message ${messageId}`);
+                            }
+                        });
+                    }
+                }
+            });
+        }
+        
+        function renderReactions(messageId, reactions) {
+            if (!reactions || Object.keys(reactions).length === 0) {
+                return '';
+            }
+            
+            let reactionsHtml = '<div class="message-reactions" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">';
+            
+            for (const [emoji, users] of Object.entries(reactions)) {
+                const count = users.length;
+                const hasUserReacted = users.includes(userId);
+                const reactionClass = hasUserReacted ? 'reaction-badge reacted' : 'reaction-badge';
+                
+                reactionsHtml += `
+                    <div class="${reactionClass}" data-emoji="${emoji}" style="
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 4px;
+                        padding: 2px 8px;
+                        background: ${hasUserReacted ? 'rgba(108, 92, 231, 0.2)' : 'var(--bg-secondary)'};
+                        border-radius: 24px;
+                        cursor: pointer;
+                        font-size: 14px;
+                        transition: background 0.2s ease;
+                        border: 1px solid ${hasUserReacted ? 'var(--accent-color)' : 'var(--border-color)'};
+                    ">
+                        <span style="font-size: 16px;">${emoji}</span>
+                        <span style="font-size: 12px; color: var(--text-secondary);">${count}</span>
+                        ${hasUserReacted ? '<span class="remove-reaction" style="margin-left: 4px; font-size: 12px; opacity: 0.6;">✕</span>' : ''}
+                    </div>
+                `;
+            }
+            
+            reactionsHtml += '</div>';
+            return reactionsHtml;
+        }
+        
+        function playReactionSound() {
+            if (!soundEnabled) return;
+            
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.frequency.setValueAtTime(523.25, audioContext.currentTime); // C5 note
+                oscillator.frequency.setValueAtTime(587.33, audioContext.currentTime + 0.1); // D5 note
+                
+                gainNode.gain.setValueAtTime(0.15, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+                
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.2);
+            } catch (e) {
+                console.log('Web Audio API not available, skipping reaction sound');
+            }
+        }
 
         // ========== LOAD YOUTUBE IFrame API ==========
         function loadYouTubeAPI() {
@@ -747,7 +1153,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        // ========== EXISTING FUNCTIONS (unchanged from previous) ==========
+        // ========== EXISTING FUNCTIONS ==========
 
         function generateUserId() {
             const id = 'user_' + Math.random().toString(36).substr(2, 9);
@@ -852,7 +1258,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     isDeleted: false,
                     isEdited: false,
                     editHistory: [],
-                    mediaEmbed: mediaEmbed
+                    mediaEmbed: mediaEmbed,
+                    reactions: {} // Initialize reactions object
                 };
 
                 db.ref('messages').push(messageData, function(error) {
@@ -1038,7 +1445,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             text: '🗑️ This message was deleted',
                             deletedAt: Date.now(),
                             originalText: messageData.text,
-                            mediaEmbed: null
+                            mediaEmbed: null,
+                            reactions: null // Remove reactions when message is deleted
                         }, (error) => {
                             if (error) {
                                 console.error('Error deleting message:', error);
@@ -1067,7 +1475,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 id: message.id,
                 text: message.text,
                 mediaEmbed: message.mediaEmbed,
-                isDeleted: message.isDeleted
+                isDeleted: message.isDeleted,
+                reactions: message.reactions
             });
 
             if (message.id) {
@@ -1102,7 +1511,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             if (!message.isDeleted) {
-                content += `<button class="reply-btn" title="Reply to this message">🗨️</button>`;
+                content += `
+                    <button class="reply-btn" title="Reply to this message">🗨️</button>
+                    <button class="add-reaction-btn" title="Add reaction" style="margin-left: 4px;">😊</button>`;
             }
             
             content += `</div>
@@ -1150,6 +1561,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const escapedText = escapeHtml(linkedText);
                 const highlightedText = highlightMentions(escapedText);
                 content += `<div class="message-text">${highlightedText}${editedBadge}</div>`;
+            }
+            
+            // Add reactions if they exist
+            if (message.reactions && !message.isDeleted) {
+                content += renderReactions(messageId, message.reactions);
             }
             
             content += `</div>`;
