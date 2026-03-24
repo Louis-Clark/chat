@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentCallWith = null;
     let callTimer = null;
     let callStartTime = 0;
+    let pendingCallData = null; // Store pending call data separately
     
     // WebRTC Configuration
     const configuration = {
@@ -170,8 +171,10 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('✅ Accept call button found, attaching listener');
             acceptCallBtn.addEventListener('click', (e) => {
                 console.log('🎯 Accept call button clicked');
-                console.log('Pending offer exists:', !!window.pendingOffer);
-                console.log('Current call with:', currentCallWith);
+                console.log('Pending call data exists:', !!pendingCallData);
+                if (pendingCallData) {
+                    console.log('Pending call data:', pendingCallData);
+                }
                 acceptCall();
             });
         } else {
@@ -192,7 +195,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (closeCallModal) {
             closeCallModal.addEventListener('click', () => {
                 if (callModal) callModal.classList.add('hidden');
-                if (window.pendingOffer && !callActive) {
+                if (pendingCallData && !callActive) {
                     rejectCall();
                 }
             });
@@ -411,6 +414,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const offer = await peerConnection.createOffer();
                 await peerConnection.setLocalDescription(offer);
                 
+                console.log('📞 Sending call offer to:', targetUserId);
                 sendCallSignal(targetUserId, 'call-offer', {
                     offer: peerConnection.localDescription,
                     from: userId,
@@ -450,17 +454,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 const signal = snapshot.val();
                 const signalId = snapshot.key;
                 
+                console.log('📞 Received signal:', signal.type, 'from:', signal.fromUsername, 'target:', signal.target, 'myId:', userId);
+                
+                // Check if this signal is for me
                 if (signal.target === userId) {
-                    console.log('📞 Received signal:', signal.type, 'from:', signal.fromUsername);
-                    console.log('Signal data:', signal);
+                    console.log('✅ Signal is for me!');
                     
                     switch (signal.type) {
                         case 'call-offer':
-                            if (!callActive) {
-                                console.log('📞 Processing call offer from:', signal.fromUsername);
-                                handleIncomingCall(signal, signalId);
+                            console.log('📞 Processing call offer from:', signal.fromUsername);
+                            console.log('Offer details:', signal.offer);
+                            if (!callActive && !pendingCallData) {
+                                // Store the offer in pendingCallData - DON'T DELETE IT YET
+                                pendingCallData = {
+                                    offer: signal.offer,
+                                    signalId: signalId,
+                                    from: signal.from,
+                                    fromUsername: signal.fromUsername,
+                                    fromUserColor: signal.fromUserColor
+                                };
+                                console.log('✅ Stored pending call data:', pendingCallData);
+                                handleIncomingCall(pendingCallData);
                             } else {
-                                console.log('📞 Busy, rejecting call');
+                                console.log('📞 Busy or already have pending call, rejecting');
                                 sendCallSignal(signal.from, 'call-reject', { reason: 'busy' });
                                 snapshot.ref.remove();
                             }
@@ -515,37 +531,33 @@ document.addEventListener('DOMContentLoaded', () => {
                             }
                             break;
                     }
+                } else {
+                    console.log('❌ Signal not for me, target:', signal.target);
                 }
             });
         }
         
-        function handleIncomingCall(signal, signalId) {
-            console.log('📞 Incoming call from:', signal.fromUsername);
-            console.log('Call offer data:', signal.offer);
+        function handleIncomingCall(callData) {
+            console.log('📞 Handling incoming call from:', callData.fromUsername);
+            console.log('Call offer data:', callData.offer);
             
             if (callActive) {
-                sendCallSignal(signal.from, 'call-reject', { reason: 'busy' });
-                window.database.ref(`calls/${signalId}`).remove();
+                sendCallSignal(callData.from, 'call-reject', { reason: 'busy' });
+                window.database.ref(`calls/${callData.signalId}`).remove();
+                pendingCallData = null;
                 return;
             }
             
-            // Store the offer for later - THIS IS THE CRITICAL PART
-            window.pendingOffer = signal.offer;
-            window.pendingSignalId = signalId;
-            window.pendingFromUsername = signal.fromUsername;
-            
-            console.log('✅ Stored pending offer:', !!window.pendingOffer);
-            
             currentCallWith = {
-                id: signal.from,
-                username: signal.fromUsername,
-                signalId: signalId
+                id: callData.from,
+                username: callData.fromUsername,
+                signalId: callData.signalId
             };
             
             // Show incoming call notification
             if (callModal) {
                 callModal.classList.remove('hidden');
-                updateCallStatus(`📞 Incoming call from ${signal.fromUsername}...`);
+                updateCallStatus(`📞 Incoming call from ${callData.fromUsername}...`);
                 
                 // Show accept/reject buttons, hide call actions initially
                 const incomingActions = document.querySelector('.incoming-actions');
@@ -567,11 +579,10 @@ document.addEventListener('DOMContentLoaded', () => {
         
         async function acceptCall() {
             console.log('🎯 Accepting call...');
-            console.log('Pending offer exists:', !!window.pendingOffer);
-            console.log('Current call with:', currentCallWith);
+            console.log('Pending call data exists:', !!pendingCallData);
             
-            if (!window.pendingOffer) {
-                console.error('No pending offer found. Check if handleIncomingCall was called.');
+            if (!pendingCallData) {
+                console.error('No pending call data found');
                 alert('No incoming call found. Please try again.');
                 return;
             }
@@ -641,10 +652,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // Set remote description from the stored offer
                 console.log('📞 Setting remote description...');
-                console.log('Pending offer type:', window.pendingOffer.type);
-                console.log('Pending offer sdp length:', window.pendingOffer.sdp?.length);
+                console.log('Pending offer:', pendingCallData.offer);
                 
-                const offerDescription = new RTCSessionDescription(window.pendingOffer);
+                const offerDescription = new RTCSessionDescription(pendingCallData.offer);
                 await peerConnection.setRemoteDescription(offerDescription);
                 console.log('✅ Remote description set');
                 
@@ -658,12 +668,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     answer: peerConnection.localDescription
                 });
                 
-                // Clean up pending offer
-                if (window.pendingSignalId) {
-                    window.database.ref(`calls/${window.pendingSignalId}`).remove();
-                    window.pendingOffer = null;
-                    window.pendingSignalId = null;
-                    window.pendingFromUsername = null;
+                // Clean up pending call data ONLY AFTER successfully sending answer
+                const signalIdToRemove = pendingCallData.signalId;
+                pendingCallData = null;
+                
+                if (signalIdToRemove) {
+                    window.database.ref(`calls/${signalIdToRemove}`).remove();
                 }
                 
                 callActive = true;
@@ -689,7 +699,13 @@ document.addEventListener('DOMContentLoaded', () => {
         function rejectCall() {
             console.log('🎯 Rejecting call...');
             
-            if (currentCallWith && currentCallWith.signalId) {
+            if (pendingCallData && pendingCallData.signalId) {
+                sendCallSignal(pendingCallData.from, 'call-reject', {
+                    reason: 'rejected',
+                    fromUsername: username
+                });
+                window.database.ref(`calls/${pendingCallData.signalId}`).remove();
+            } else if (currentCallWith && currentCallWith.signalId) {
                 sendCallSignal(currentCallWith.id, 'call-reject', {
                     reason: 'rejected',
                     fromUsername: username
@@ -708,10 +724,8 @@ document.addEventListener('DOMContentLoaded', () => {
             cleanupCall();
             if (callModal) callModal.classList.add('hidden');
             
-            // Clear pending offer
-            window.pendingOffer = null;
-            window.pendingSignalId = null;
-            window.pendingFromUsername = null;
+            // Clear pending call data
+            pendingCallData = null;
         }
         
         function endCall() {
@@ -721,6 +735,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             cleanupCall();
             if (callModal) callModal.classList.add('hidden');
+            pendingCallData = null;
         }
         
         function toggleMute() {
@@ -849,7 +864,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 let count = 0;
                 
                 const ring = () => {
-                    if (count >= 8 || callActive || !window.pendingOffer) {
+                    if (count >= 8 || callActive || !pendingCallData) {
                         if (ringInterval) clearInterval(ringInterval);
                         oscillator.stop();
                         return;
