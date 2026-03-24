@@ -173,7 +173,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log('🎯 Accept call button clicked');
                 console.log('Pending call data exists:', !!pendingCallData);
                 if (pendingCallData) {
-                    console.log('Pending call data:', pendingCallData);
+                    console.log('Pending call data offer type:', pendingCallData.offer?.type);
+                    console.log('Pending call data offer sdp length:', pendingCallData.offer?.sdp?.length);
                 }
                 acceptCall();
             });
@@ -415,8 +416,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 await peerConnection.setLocalDescription(offer);
                 
                 console.log('📞 Sending call offer to:', targetUserId);
+                console.log('Offer type:', offer.type);
+                console.log('Offer sdp length:', offer.sdp?.length);
+                
+                // Store the offer as a plain object with type and sdp
+                const offerData = {
+                    type: offer.type,
+                    sdp: offer.sdp
+                };
+                
                 sendCallSignal(targetUserId, 'call-offer', {
-                    offer: peerConnection.localDescription,
+                    offer: offerData,
                     from: userId,
                     fromUsername: username,
                     fromUserColor: userColor
@@ -463,17 +473,29 @@ document.addEventListener('DOMContentLoaded', () => {
                     switch (signal.type) {
                         case 'call-offer':
                             console.log('📞 Processing call offer from:', signal.fromUsername);
-                            console.log('Offer details:', signal.offer);
+                            console.log('Offer data:', signal.offer);
+                            console.log('Offer type:', signal.offer?.type);
+                            console.log('Offer sdp length:', signal.offer?.sdp?.length);
+                            
                             if (!callActive && !pendingCallData) {
-                                // Store the offer in pendingCallData - DON'T DELETE IT YET
+                                // Validate that the offer has proper type and sdp
+                                if (!signal.offer || !signal.offer.type || !signal.offer.sdp) {
+                                    console.error('Invalid offer received:', signal.offer);
+                                    return;
+                                }
+                                
+                                // Store the offer data - ensure it has type and sdp
                                 pendingCallData = {
-                                    offer: signal.offer,
+                                    offer: {
+                                        type: signal.offer.type,
+                                        sdp: signal.offer.sdp
+                                    },
                                     signalId: signalId,
                                     from: signal.from,
                                     fromUsername: signal.fromUsername,
                                     fromUserColor: signal.fromUserColor
                                 };
-                                console.log('✅ Stored pending call data:', pendingCallData);
+                                console.log('✅ Stored pending call data with valid offer:', pendingCallData.offer.type);
                                 handleIncomingCall(pendingCallData);
                             } else {
                                 console.log('📞 Busy or already have pending call, rejecting');
@@ -485,7 +507,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         case 'call-answer':
                             console.log('📞 Received call answer');
                             if (peerConnection && peerConnection.signalingState === 'have-local-offer') {
-                                await peerConnection.setRemoteDescription(new RTCSessionDescription(signal.answer));
+                                const answer = new RTCSessionDescription({
+                                    type: signal.answer.type,
+                                    sdp: signal.answer.sdp
+                                });
+                                await peerConnection.setRemoteDescription(answer);
                                 snapshot.ref.remove();
                                 updateCallStatus('Connected');
                                 startCallTimer();
@@ -494,7 +520,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             
                         case 'ice-candidate':
                             console.log('📡 Received ICE candidate');
-                            if (peerConnection) {
+                            if (peerConnection && signal.candidate) {
                                 try {
                                     await peerConnection.addIceCandidate(new RTCIceCandidate(signal.candidate));
                                 } catch (err) {
@@ -539,7 +565,8 @@ document.addEventListener('DOMContentLoaded', () => {
         
         function handleIncomingCall(callData) {
             console.log('📞 Handling incoming call from:', callData.fromUsername);
-            console.log('Call offer data:', callData.offer);
+            console.log('Call offer type:', callData.offer.type);
+            console.log('Call offer sdp length:', callData.offer.sdp?.length);
             
             if (callActive) {
                 sendCallSignal(callData.from, 'call-reject', { reason: 'busy' });
@@ -584,6 +611,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!pendingCallData) {
                 console.error('No pending call data found');
                 alert('No incoming call found. Please try again.');
+                return;
+            }
+            
+            if (!pendingCallData.offer || !pendingCallData.offer.type || !pendingCallData.offer.sdp) {
+                console.error('Invalid pending call data:', pendingCallData);
+                alert('Invalid call data. Please try again.');
+                cleanupCall();
+                if (callModal) callModal.classList.add('hidden');
+                pendingCallData = null;
                 return;
             }
             
@@ -650,11 +686,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 };
                 
-                // Set remote description from the stored offer
+                // Set remote description from the stored offer - create proper RTCSessionDescription
                 console.log('📞 Setting remote description...');
-                console.log('Pending offer:', pendingCallData.offer);
+                console.log('Pending offer type:', pendingCallData.offer.type);
+                console.log('Pending offer sdp length:', pendingCallData.offer.sdp?.length);
                 
-                const offerDescription = new RTCSessionDescription(pendingCallData.offer);
+                const offerDescription = new RTCSessionDescription({
+                    type: pendingCallData.offer.type,
+                    sdp: pendingCallData.offer.sdp
+                });
+                
                 await peerConnection.setRemoteDescription(offerDescription);
                 console.log('✅ Remote description set');
                 
@@ -664,8 +705,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 await peerConnection.setLocalDescription(answer);
                 console.log('✅ Answer created and set');
                 
+                // Store answer as plain object for Firebase
+                const answerData = {
+                    type: answer.type,
+                    sdp: answer.sdp
+                };
+                
                 sendCallSignal(currentCallWith.id, 'call-answer', {
-                    answer: peerConnection.localDescription
+                    answer: answerData
                 });
                 
                 // Clean up pending call data ONLY AFTER successfully sending answer
