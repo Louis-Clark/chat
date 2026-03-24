@@ -166,11 +166,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // Voice Call Event Listeners
         if (callBtn) callBtn.addEventListener('click', showUserList);
         
-        // Make sure accept button has event listener
         if (acceptCallBtn) {
             console.log('✅ Accept call button found, attaching listener');
             acceptCallBtn.addEventListener('click', (e) => {
                 console.log('🎯 Accept call button clicked');
+                console.log('Pending offer exists:', !!window.pendingOffer);
+                console.log('Current call with:', currentCallWith);
                 acceptCall();
             });
         } else {
@@ -451,20 +452,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 if (signal.target === userId) {
                     console.log('📞 Received signal:', signal.type, 'from:', signal.fromUsername);
+                    console.log('Signal data:', signal);
                     
                     switch (signal.type) {
                         case 'call-offer':
                             if (!callActive) {
+                                console.log('📞 Processing call offer from:', signal.fromUsername);
                                 handleIncomingCall(signal, signalId);
                             } else {
+                                console.log('📞 Busy, rejecting call');
                                 sendCallSignal(signal.from, 'call-reject', { reason: 'busy' });
                                 snapshot.ref.remove();
                             }
                             break;
                             
                         case 'call-answer':
+                            console.log('📞 Received call answer');
                             if (peerConnection && peerConnection.signalingState === 'have-local-offer') {
-                                console.log('📞 Setting remote description from answer');
                                 await peerConnection.setRemoteDescription(new RTCSessionDescription(signal.answer));
                                 snapshot.ref.remove();
                                 updateCallStatus('Connected');
@@ -473,9 +477,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             break;
                             
                         case 'ice-candidate':
+                            console.log('📡 Received ICE candidate');
                             if (peerConnection) {
                                 try {
-                                    console.log('📡 Adding ICE candidate');
                                     await peerConnection.addIceCandidate(new RTCIceCandidate(signal.candidate));
                                 } catch (err) {
                                     console.error('Error adding ICE candidate:', err);
@@ -485,6 +489,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             break;
                             
                         case 'call-reject':
+                            console.log('📞 Call rejected');
                             if (callActive && currentCallWith && currentCallWith.id === signal.from) {
                                 updateCallStatus('Call rejected');
                                 if (ringInterval) clearInterval(ringInterval);
@@ -498,6 +503,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             break;
                             
                         case 'call-end':
+                            console.log('📞 Call ended');
                             if (callActive) {
                                 updateCallStatus('Call ended');
                                 if (ringInterval) clearInterval(ringInterval);
@@ -515,6 +521,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         function handleIncomingCall(signal, signalId) {
             console.log('📞 Incoming call from:', signal.fromUsername);
+            console.log('Call offer data:', signal.offer);
             
             if (callActive) {
                 sendCallSignal(signal.from, 'call-reject', { reason: 'busy' });
@@ -522,16 +529,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             
+            // Store the offer for later - THIS IS THE CRITICAL PART
+            window.pendingOffer = signal.offer;
+            window.pendingSignalId = signalId;
+            window.pendingFromUsername = signal.fromUsername;
+            
+            console.log('✅ Stored pending offer:', !!window.pendingOffer);
+            
             currentCallWith = {
                 id: signal.from,
                 username: signal.fromUsername,
                 signalId: signalId
             };
-            
-            // Store the offer for later
-            window.pendingOffer = signal.offer;
-            window.pendingSignalId = signalId;
-            window.pendingFromUsername = signal.fromUsername;
             
             // Show incoming call notification
             if (callModal) {
@@ -558,9 +567,17 @@ document.addEventListener('DOMContentLoaded', () => {
         
         async function acceptCall() {
             console.log('🎯 Accepting call...');
+            console.log('Pending offer exists:', !!window.pendingOffer);
+            console.log('Current call with:', currentCallWith);
             
-            if (!window.pendingOffer || !currentCallWith) {
-                console.error('No pending offer found');
+            if (!window.pendingOffer) {
+                console.error('No pending offer found. Check if handleIncomingCall was called.');
+                alert('No incoming call found. Please try again.');
+                return;
+            }
+            
+            if (!currentCallWith) {
+                console.error('No currentCallWith found');
                 return;
             }
             
@@ -622,14 +639,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 };
                 
-                // Set remote description
+                // Set remote description from the stored offer
                 console.log('📞 Setting remote description...');
-                await peerConnection.setRemoteDescription(new RTCSessionDescription(window.pendingOffer));
+                console.log('Pending offer type:', window.pendingOffer.type);
+                console.log('Pending offer sdp length:', window.pendingOffer.sdp?.length);
+                
+                const offerDescription = new RTCSessionDescription(window.pendingOffer);
+                await peerConnection.setRemoteDescription(offerDescription);
+                console.log('✅ Remote description set');
                 
                 // Create and send answer
                 console.log('📞 Creating answer...');
                 const answer = await peerConnection.createAnswer();
                 await peerConnection.setLocalDescription(answer);
+                console.log('✅ Answer created and set');
                 
                 sendCallSignal(currentCallWith.id, 'call-answer', {
                     answer: peerConnection.localDescription
