@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <meta name="description" content="Real-time chat application with video, media support, and reactions">
-    <title>Real-time Chat - Video & Media Support with Reactions</title>
+    <meta name="description" content="Real-time chat application with video, media support, reactions, and voice calls">
+    <title>Real-time Chat - Video, Media & Voice Calls</title>
     <link rel="stylesheet" href="style.css">
     <!-- YouTube IFrame API for video embeds -->
     <script src="https://www.youtube.com/iframe_api"></script>
@@ -47,6 +47,265 @@
             });
         }
     </script>
+    
+    <style>
+        /* Additional styles for voice call features */
+        .call-controls {
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .call-btn {
+            padding: 8px 16px;
+            background: var(--accent-color);
+            border: none;
+            border-radius: 20px;
+            color: white;
+            cursor: pointer;
+            transition: transform 0.2s ease, background 0.2s ease;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .call-btn:hover {
+            transform: scale(1.02);
+            background: var(--accent-hover);
+        }
+        
+        .online-count {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-left: auto;
+        }
+        
+        /* Modal styles */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            animation: fadeIn 0.2s ease;
+        }
+        
+        .modal.hidden {
+            display: none;
+        }
+        
+        .modal-content {
+            background: var(--bg-primary);
+            border-radius: 24px;
+            padding: 24px;
+            width: 350px;
+            max-width: 90%;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            animation: slideUp 0.3s ease;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .modal-header h3 {
+            margin: 0;
+            color: var(--text-primary);
+        }
+        
+        .close-modal {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            transition: color 0.2s ease;
+        }
+        
+        .close-modal:hover {
+            color: var(--text-primary);
+        }
+        
+        .call-icon {
+            font-size: 64px;
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .call-status {
+            text-align: center;
+            font-size: 18px;
+            margin-bottom: 8px;
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+        
+        .call-timer {
+            text-align: center;
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 20px;
+        }
+        
+        .call-actions {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .call-action-btn {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            font-size: 24px;
+            transition: transform 0.2s ease, background 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .call-action-btn:hover {
+            transform: scale(1.05);
+        }
+        
+        .call-action-btn.mute {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+        
+        .call-action-btn.speaker {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+        
+        .call-action-btn.end {
+            background: #ff4444;
+            color: white;
+        }
+        
+        .call-action-btn.accept {
+            background: #4CAF50;
+            color: white;
+            width: auto;
+            border-radius: 40px;
+            padding: 10px 24px;
+        }
+        
+        .call-action-btn.reject {
+            background: #ff4444;
+            color: white;
+            width: auto;
+            border-radius: 40px;
+            padding: 10px 24px;
+        }
+        
+        .incoming-actions {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            margin-top: 20px;
+        }
+        
+        .user-list-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        
+        .user-list-item:hover {
+            background: var(--bg-hover);
+        }
+        
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+        }
+        
+        .user-info-text {
+            flex: 1;
+            margin-left: 12px;
+        }
+        
+        .user-name {
+            font-weight: bold;
+            color: var(--text-primary);
+        }
+        
+        .user-status {
+            font-size: 12px;
+            color: #4CAF50;
+        }
+        
+        .call-user-btn {
+            padding: 6px 14px;
+            background: var(--accent-color);
+            border: none;
+            border-radius: 20px;
+            color: white;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+            font-size: 14px;
+        }
+        
+        .call-user-btn:hover {
+            transform: scale(1.02);
+        }
+        
+        .user-list-container {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        @keyframes ring {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        
+        .ring-animation {
+            animation: ring 0.5s ease infinite;
+        }
+    </style>
 </head>
 <body>
     <div class="app">
@@ -95,9 +354,15 @@
                 </div>
             </div>
 
+            <!-- Voice Call Controls -->
+            <div class="call-controls">
+                <button id="call-btn" class="call-btn" title="Start a voice call with online users">📞 Call User</button>
+                <span class="online-count">Online: 0</span>
+            </div>
+
             <div class="online-users-container">
                 <div id="online-users" class="online-users">
-                    <span class="online-count">Online: 0</span>
+                    <span class="online-count-text">Online Users</span>
                 </div>
             </div>
 
@@ -132,6 +397,44 @@
             </div>
         </div>
     </div>
+
+    <!-- Call Modal -->
+    <div id="call-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Voice Call</h3>
+                <button id="close-call-modal" class="close-modal" title="Close">✕</button>
+            </div>
+            <div class="call-icon">📞</div>
+            <div id="call-status" class="call-status">Connecting...</div>
+            <div id="call-timer" class="call-timer">0:00</div>
+            <div class="call-actions">
+                <button id="mute-call" class="call-action-btn mute" title="Mute microphone">🎤</button>
+                <button id="speaker-call" class="call-action-btn speaker" title="Toggle speaker">🔈</button>
+                <button id="end-call" class="call-action-btn end" title="End call">📞</button>
+            </div>
+            <div class="incoming-actions" style="display: none;">
+                <button id="accept-call" class="call-action-btn accept" title="Accept call">Accept</button>
+                <button id="reject-call" class="call-action-btn reject" title="Reject call">Reject</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- User List Modal -->
+    <div id="user-list-modal" class="modal hidden">
+        <div class="modal-content" style="width: 400px;">
+            <div class="modal-header">
+                <h3>📞 Online Users</h3>
+                <button id="close-user-list" class="close-modal" title="Close">✕</button>
+            </div>
+            <div id="user-list-content" class="user-list-container">
+                <div style="text-align: center; padding: 20px; color: var(--text-secondary);">Loading users...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden audio element for remote call audio -->
+    <audio id="remote-audio" style="display: none;"></audio>
 
     <script src="script.js"></script>
 </body>

@@ -1,9 +1,29 @@
-// Advanced Chat Application Script
+// Advanced Chat Application Script with Voice Calls
 document.addEventListener('DOMContentLoaded', () => {
     console.log('📱 Chat app starting...');
     
     // YouTube Player instances cache
     window.youtubePlayers = new Map();
+    
+    // Voice Call Variables
+    let peerConnection = null;
+    let localStream = null;
+    let remoteStream = null;
+    let callActive = false;
+    let currentCallWith = null;
+    let callTimer = null;
+    let callStartTime = 0;
+    
+    // WebRTC Configuration
+    const configuration = {
+        iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' }
+        ]
+    };
     
     initializeApp();
 
@@ -35,6 +55,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const typingIndicator = document.getElementById('typing-indicator');
         const colorButtons = document.querySelectorAll('.color-btn');
 
+        // Voice Call UI Elements - Add these to your HTML
+        const callBtn = document.getElementById('call-btn');
+        const callModal = document.getElementById('call-modal');
+        const callStatus = document.getElementById('call-status');
+        const callTimerDisplay = document.getElementById('call-timer');
+        const acceptCallBtn = document.getElementById('accept-call');
+        const rejectCallBtn = document.getElementById('reject-call');
+        const endCallBtn = document.getElementById('end-call');
+        const muteCallBtn = document.getElementById('mute-call');
+        const speakerCallBtn = document.getElementById('speaker-call');
+        const closeCallModal = document.getElementById('close-call-modal');
+        const userListModal = document.getElementById('user-list-modal');
+        const userListContent = document.getElementById('user-list-content');
+        const closeUserList = document.getElementById('close-user-list');
+
         // State
         let username = localStorage.getItem('username') || '';
         let userColor = localStorage.getItem('userColor') || '#6C5CE7';
@@ -52,8 +87,10 @@ document.addEventListener('DOMContentLoaded', () => {
         let onlineUsers = new Set();
         let typingUsers = new Set();
         let isInitialized = false;
-        let activeReactionPicker = null; // Track active reaction picker
-        let pendingMediaUrls = new Map(); // Cache for URL type detection
+        let activeReactionPicker = null;
+        let pendingMediaUrls = new Map();
+        let isMuted = false;
+        let isSpeakerOn = false;
 
         console.log('💾 User ID:', userId);
 
@@ -67,6 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showChatScreen();
             setupOnlineStatus();
             listenForMessages();
+            listenForCalls();
             isInitialized = true;
         }
 
@@ -118,12 +156,25 @@ document.addEventListener('DOMContentLoaded', () => {
             messageInput.focus();
         });
         
-        // Unified upload button
         if (uploadBtn) uploadBtn.addEventListener('click', () => fileInput.click());
         if (fileInput) fileInput.addEventListener('change', handleFileUpload);
         
         if (voiceBtn) voiceBtn.addEventListener('click', startVoiceRecording);
         if (stopRecordingBtn) stopRecordingBtn.addEventListener('click', stopVoiceRecording);
+
+        // Voice Call Event Listeners
+        if (callBtn) callBtn.addEventListener('click', showUserList);
+        if (acceptCallBtn) acceptCallBtn.addEventListener('click', acceptCall);
+        if (rejectCallBtn) rejectCallBtn.addEventListener('click', rejectCall);
+        if (endCallBtn) endCallBtn.addEventListener('click', endCall);
+        if (muteCallBtn) muteCallBtn.addEventListener('click', toggleMute);
+        if (speakerCallBtn) speakerCallBtn.addEventListener('click', toggleSpeaker);
+        if (closeCallModal) closeCallModal.addEventListener('click', () => {
+            if (callModal) callModal.classList.add('hidden');
+        });
+        if (closeUserList) closeUserList.addEventListener('click', () => {
+            if (userListModal) userListModal.classList.add('hidden');
+        });
 
         // Event delegation for reply, edit, delete, and reaction buttons
         if (chatMessages) chatMessages.addEventListener('click', (e) => {
@@ -132,14 +183,12 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const messageId = messageElement.id.replace('message-', '');
             
-            // Reply button
             if (e.target.classList.contains('reply-btn')) {
                 const replyUsername = messageElement.querySelector('.message-username').textContent;
                 const messageText = messageElement.querySelector('.message-text')?.textContent || '[Media]';
                 startReply(messageId, replyUsername, messageText, messageElement);
             }
             
-            // Edit button (only for own messages)
             if (e.target.classList.contains('edit-btn')) {
                 const messageData = getMessageDataById(messageId);
                 if (messageData && messageData.userId === userId) {
@@ -147,7 +196,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             
-            // Delete button (only for own messages)
             if (e.target.classList.contains('delete-btn')) {
                 const messageData = getMessageDataById(messageId);
                 if (messageData && messageData.userId === userId) {
@@ -155,14 +203,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             
-            // Reaction button - open reaction picker
             if (e.target.classList.contains('add-reaction-btn') || e.target.closest('.add-reaction-btn')) {
                 const btn = e.target.closest('.add-reaction-btn');
                 e.stopPropagation();
                 showReactionPicker(btn, messageId, messageElement);
             }
             
-            // Remove reaction button
             if (e.target.classList.contains('remove-reaction') || e.target.closest('.remove-reaction')) {
                 const reactionEmoji = e.target.closest('.reaction-badge').getAttribute('data-emoji');
                 const messageId = e.target.closest('.message').id.replace('message-', '');
@@ -171,7 +217,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Close reaction picker when clicking outside
         document.addEventListener('click', (e) => {
             if (activeReactionPicker && !activeReactionPicker.contains(e.target)) {
                 activeReactionPicker.remove();
@@ -179,7 +224,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Event delegation for clicking on reply previews in messages
         if (chatMessages) chatMessages.addEventListener('click', (e) => {
             const replyPreview = e.target.closest('.message-reply');
             if (replyPreview) {
@@ -195,7 +239,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Color selectors
         colorButtons.forEach(btn => {
             if (btn.dataset.color === userColor) {
                 btn.classList.add('selected');
@@ -211,19 +254,472 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        // Store messages data for reference
         let messagesCache = new Map();
+
+        // ========== VOICE CALL FUNCTIONS ==========
+        
+        function showUserList() {
+            if (!userListModal || !userListContent) return;
+            
+            // Get all online users except yourself
+            const otherUsers = Array.from(onlineUsers).filter(id => id !== userId);
+            
+            if (otherUsers.length === 0) {
+                userListContent.innerHTML = '<div style="text-align: center; padding: 20px;">No other users online</div>';
+            } else {
+                userListContent.innerHTML = '';
+                otherUsers.forEach(uid => {
+                    const userRef = window.database.ref(`online/${uid}`);
+                    userRef.once('value', (snapshot) => {
+                        const userData = snapshot.val();
+                        if (userData && userData.username) {
+                            const userItem = document.createElement('div');
+                            userItem.className = 'user-list-item';
+                            userItem.style.cssText = `
+                                display: flex;
+                                align-items: center;
+                                justify-content: space-between;
+                                padding: 12px;
+                                border-bottom: 1px solid var(--border-color);
+                                cursor: pointer;
+                                transition: background 0.2s ease;
+                            `;
+                            userItem.innerHTML = `
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <div style="width: 40px; height: 40px; border-radius: 50%; background: ${userData.userColor || '#6C5CE7'}; display: flex; align-items: center; justify-content: center; font-weight: bold; color: white;">
+                                        ${generateAvatar(userData.username)}
+                                    </div>
+                                    <div>
+                                        <div style="font-weight: bold;">${escapeHtml(userData.username)}</div>
+                                        <div style="font-size: 12px; color: #4CAF50;">● Online</div>
+                                    </div>
+                                </div>
+                                <button class="call-user-btn" data-user-id="${uid}" data-username="${escapeHtml(userData.username)}" style="
+                                    padding: 8px 16px;
+                                    background: var(--accent-color);
+                                    border: none;
+                                    border-radius: 20px;
+                                    color: white;
+                                    cursor: pointer;
+                                    transition: transform 0.2s ease;
+                                ">📞 Call</button>
+                            `;
+                            
+                            const callBtn = userItem.querySelector('.call-user-btn');
+                            callBtn.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                initiateCall(uid, userData.username);
+                                userListModal.classList.add('hidden');
+                            });
+                            
+                            userListContent.appendChild(userItem);
+                        }
+                    });
+                });
+            }
+            
+            userListModal.classList.remove('hidden');
+        }
+        
+        async function initiateCall(targetUserId, targetUsername) {
+            if (callActive) {
+                alert('You are already in a call');
+                return;
+            }
+            
+            try {
+                // Request microphone access
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                
+                // Create peer connection
+                peerConnection = new RTCPeerConnection(configuration);
+                
+                // Add local stream tracks
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
+                });
+                
+                // Handle incoming remote stream
+                peerConnection.ontrack = (event) => {
+                    remoteStream = event.streams[0];
+                    if (remoteStream) {
+                        // Create audio element for remote audio
+                        const remoteAudio = document.getElementById('remote-audio');
+                        if (remoteAudio) {
+                            remoteAudio.srcObject = remoteStream;
+                            remoteAudio.play();
+                        }
+                    }
+                };
+                
+                // Handle ICE candidates
+                peerConnection.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        sendCallSignal(targetUserId, 'ice-candidate', {
+                            candidate: event.candidate
+                        });
+                    }
+                };
+                
+                // Handle connection state changes
+                peerConnection.onconnectionstatechange = () => {
+                    console.log('Connection state:', peerConnection.connectionState);
+                    if (peerConnection.connectionState === 'connected') {
+                        startCallTimer();
+                        updateCallStatus('Connected');
+                    } else if (peerConnection.connectionState === 'failed') {
+                        endCall();
+                        updateCallStatus('Connection failed');
+                    } else if (peerConnection.connectionState === 'disconnected') {
+                        updateCallStatus('Disconnected');
+                    }
+                };
+                
+                // Create and send offer
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+                
+                sendCallSignal(targetUserId, 'call-offer', {
+                    offer: peerConnection.localDescription,
+                    from: userId,
+                    fromUsername: username,
+                    fromUserColor: userColor
+                });
+                
+                currentCallWith = {
+                    id: targetUserId,
+                    username: targetUsername
+                };
+                callActive = true;
+                
+                if (callModal) {
+                    callModal.classList.remove('hidden');
+                    updateCallStatus(`Calling ${targetUsername}...`);
+                }
+                
+            } catch (err) {
+                console.error('Error initiating call:', err);
+                alert('Could not access microphone. Please check permissions.');
+                cleanupCall();
+            }
+        }
+        
+        function listenForCalls() {
+            const db = window.database;
+            if (!db) return;
+            
+            const callsRef = db.ref('calls');
+            
+            callsRef.on('child_added', async (snapshot) => {
+                const signal = snapshot.val();
+                const signalId = snapshot.key;
+                
+                if (signal.target === userId) {
+                    switch (signal.type) {
+                        case 'call-offer':
+                            if (!callActive) {
+                                handleIncomingCall(signal, signalId);
+                            } else {
+                                // Reject if busy
+                                sendCallSignal(signal.from, 'call-reject', {
+                                    reason: 'busy'
+                                });
+                                snapshot.ref.remove();
+                            }
+                            break;
+                            
+                        case 'call-answer':
+                            if (peerConnection && peerConnection.signalingState === 'have-local-offer') {
+                                await peerConnection.setRemoteDescription(new RTCSessionDescription(signal.answer));
+                                snapshot.ref.remove();
+                            }
+                            break;
+                            
+                        case 'ice-candidate':
+                            if (peerConnection) {
+                                try {
+                                    await peerConnection.addIceCandidate(new RTCIceCandidate(signal.candidate));
+                                } catch (err) {
+                                    console.error('Error adding ICE candidate:', err);
+                                }
+                                snapshot.ref.remove();
+                            }
+                            break;
+                            
+                        case 'call-reject':
+                            if (callActive && currentCallWith && currentCallWith.id === signal.from) {
+                                updateCallStatus('Call rejected');
+                                setTimeout(() => {
+                                    cleanupCall();
+                                    if (callModal) callModal.classList.add('hidden');
+                                    alert(`${signal.fromUsername || 'User'} rejected the call`);
+                                }, 1000);
+                                snapshot.ref.remove();
+                            }
+                            break;
+                            
+                        case 'call-end':
+                            if (callActive) {
+                                updateCallStatus('Call ended');
+                                setTimeout(() => {
+                                    cleanupCall();
+                                    if (callModal) callModal.classList.add('hidden');
+                                }, 1000);
+                                snapshot.ref.remove();
+                            }
+                            break;
+                    }
+                }
+            });
+        }
+        
+        function handleIncomingCall(signal, signalId) {
+            if (callActive) {
+                sendCallSignal(signal.from, 'call-reject', { reason: 'busy' });
+                window.database.ref(`calls/${signalId}`).remove();
+                return;
+            }
+            
+            currentCallWith = {
+                id: signal.from,
+                username: signal.fromUsername,
+                signalId: signalId
+            };
+            
+            // Show incoming call notification
+            if (callModal) {
+                callModal.classList.remove('hidden');
+                updateCallStatus(`Incoming call from ${signal.fromUsername}...`);
+                
+                // Store the offer for later
+                window.pendingOffer = signal.offer;
+                window.pendingSignalId = signalId;
+                
+                // Play incoming call sound
+                playCallSound();
+            }
+        }
+        
+        async function acceptCall() {
+            if (!window.pendingOffer || !currentCallWith) return;
+            
+            try {
+                // Request microphone access
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                
+                // Create peer connection
+                peerConnection = new RTCPeerConnection(configuration);
+                
+                // Add local stream tracks
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
+                });
+                
+                // Handle incoming remote stream
+                peerConnection.ontrack = (event) => {
+                    remoteStream = event.streams[0];
+                    if (remoteStream) {
+                        const remoteAudio = document.getElementById('remote-audio');
+                        if (remoteAudio) {
+                            remoteAudio.srcObject = remoteStream;
+                            remoteAudio.play();
+                        }
+                    }
+                };
+                
+                // Handle ICE candidates
+                peerConnection.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        sendCallSignal(currentCallWith.id, 'ice-candidate', {
+                            candidate: event.candidate
+                        });
+                    }
+                };
+                
+                // Set remote description
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(window.pendingOffer));
+                
+                // Create and send answer
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+                
+                sendCallSignal(currentCallWith.id, 'call-answer', {
+                    answer: peerConnection.localDescription
+                });
+                
+                // Clean up pending offer
+                if (window.pendingSignalId) {
+                    window.database.ref(`calls/${window.pendingSignalId}`).remove();
+                    window.pendingOffer = null;
+                    window.pendingSignalId = null;
+                }
+                
+                callActive = true;
+                updateCallStatus(`Connected with ${currentCallWith.username}`);
+                startCallTimer();
+                
+            } catch (err) {
+                console.error('Error accepting call:', err);
+                alert('Could not start call. Please check microphone permissions.');
+                cleanupCall();
+            }
+        }
+        
+        function rejectCall() {
+            if (currentCallWith && currentCallWith.signalId) {
+                sendCallSignal(currentCallWith.id, 'call-reject', {
+                    reason: 'rejected',
+                    fromUsername: username
+                });
+                window.database.ref(`calls/${currentCallWith.signalId}`).remove();
+            }
+            cleanupCall();
+            if (callModal) callModal.classList.add('hidden');
+        }
+        
+        function endCall() {
+            if (callActive && currentCallWith) {
+                sendCallSignal(currentCallWith.id, 'call-end', {});
+            }
+            cleanupCall();
+            if (callModal) callModal.classList.add('hidden');
+        }
+        
+        function toggleMute() {
+            if (localStream) {
+                isMuted = !isMuted;
+                localStream.getAudioTracks().forEach(track => {
+                    track.enabled = !isMuted;
+                });
+                if (muteCallBtn) {
+                    muteCallBtn.textContent = isMuted ? '🔇' : '🎤';
+                    muteCallBtn.title = isMuted ? 'Unmute' : 'Mute';
+                }
+            }
+        }
+        
+        function toggleSpeaker() {
+            const remoteAudio = document.getElementById('remote-audio');
+            if (remoteAudio) {
+                isSpeakerOn = !isSpeakerOn;
+                remoteAudio.style.transform = isSpeakerOn ? 'scale(1.1)' : 'scale(1)';
+                if (speakerCallBtn) {
+                    speakerCallBtn.textContent = isSpeakerOn ? '🔊' : '🔈';
+                }
+            }
+        }
+        
+        function sendCallSignal(targetUserId, type, data) {
+            const db = window.database;
+            if (!db) return;
+            
+            const signal = {
+                type: type,
+                target: targetUserId,
+                from: userId,
+                fromUsername: username,
+                timestamp: Date.now(),
+                ...data
+            };
+            
+            db.ref('calls').push(signal);
+        }
+        
+        function startCallTimer() {
+            if (callTimer) clearInterval(callTimer);
+            callStartTime = Date.now();
+            callTimer = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - callStartTime) / 1000);
+                const minutes = Math.floor(elapsed / 60);
+                const seconds = elapsed % 60;
+                if (callTimerDisplay) {
+                    callTimerDisplay.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                }
+            }, 1000);
+        }
+        
+        function updateCallStatus(message) {
+            if (callStatus) {
+                callStatus.textContent = message;
+            }
+        }
+        
+        function cleanupCall() {
+            if (callTimer) {
+                clearInterval(callTimer);
+                callTimer = null;
+            }
+            
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+            
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
+            }
+            
+            if (remoteStream) {
+                const remoteAudio = document.getElementById('remote-audio');
+                if (remoteAudio) {
+                    remoteAudio.srcObject = null;
+                }
+                remoteStream = null;
+            }
+            
+            callActive = false;
+            currentCallWith = null;
+            isMuted = false;
+            
+            if (muteCallBtn) muteCallBtn.textContent = '🎤';
+            if (speakerCallBtn) speakerCallBtn.textContent = '🔈';
+            if (callTimerDisplay) callTimerDisplay.textContent = '0:00';
+        }
+        
+        function playCallSound() {
+            if (!soundEnabled) return;
+            
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                // Ring pattern
+                let count = 0;
+                const ring = () => {
+                    if (count >= 3 || callActive) {
+                        oscillator.stop();
+                        return;
+                    }
+                    
+                    oscillator.frequency.setValueAtTime(440, audioContext.currentTime);
+                    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+                    
+                    count++;
+                    setTimeout(ring, 1500);
+                };
+                
+                oscillator.start();
+                ring();
+                
+            } catch (e) {
+                console.log('Web Audio API not available');
+            }
+        }
 
         // ========== SMART LINK DETECTION WITH META TAGS ==========
         
-        // Check if URL is a direct media file
         function isDirectMediaUrl(url) {
             const mediaExtensions = /\.(jpg|jpeg|png|gif|webp|bmp|svg|mp4|webm|mov|avi|mkv|mp3|wav|ogg|m4a)$/i;
             if (mediaExtensions.test(url)) {
                 return true;
             }
             
-            // Check for known media domains
             const mediaDomains = [
                 'imgur.com', 'i.imgur.com', 'giphy.com', 'media.giphy.com', 'tenor.com',
                 'cdn.discordapp.com', 'cdn.dribbble.com', 'images.unsplash.com',
@@ -243,7 +739,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return false;
         }
         
-        // Check if URL is YouTube
         function isYouTubeUrl(url) {
             const youtubePatterns = [
                 /(?:youtube\.com\/watch\?v=)([\w-]+)/i,
@@ -256,21 +751,16 @@ document.addEventListener('DOMContentLoaded', () => {
             return youtubePatterns.some(pattern => pattern.test(url));
         }
         
-        // Fetch page metadata to determine content type
         async function fetchPageMetadata(url) {
-            // Check cache first
             if (pendingMediaUrls.has(url)) {
                 return pendingMediaUrls.get(url);
             }
             
-            // Create a promise for this URL
             const promise = new Promise((resolve) => {
-                // Timeout after 3 seconds
                 const timeoutId = setTimeout(() => {
                     resolve({ type: 'link', error: 'timeout' });
                 }, 3000);
                 
-                // Fetch the page headers only (HEAD request is faster)
                 fetch(url, { method: 'HEAD', mode: 'no-cors' })
                     .then(response => {
                         clearTimeout(timeoutId);
@@ -292,14 +782,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     })
                     .catch(() => {
                         clearTimeout(timeoutId);
-                        // If HEAD fails, treat as regular link
                         resolve({ type: 'link' });
                     });
             });
             
             pendingMediaUrls.set(url, promise);
             
-            // Clean up cache after 1 minute
             setTimeout(() => {
                 pendingMediaUrls.delete(url);
             }, 60000);
@@ -331,7 +819,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return null;
         }
 
-        // Main link detection function
         async function detectAndProcessLinksAsync(text) {
             if (!text) return { processedText: text, mediaEmbed: null };
             
@@ -341,7 +828,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!matches) return { processedText: text, mediaEmbed: null };
             
             for (const url of matches) {
-                // Check for YouTube first
                 if (isYouTubeUrl(url)) {
                     const videoId = extractYouTubeId(url);
                     if (videoId) {
@@ -360,7 +846,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
                 
-                // Check for direct media URLs
                 if (isDirectMediaUrl(url)) {
                     let processedText = text.replace(url, '').trim();
                     if (!processedText) {
@@ -383,7 +868,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     };
                 }
                 
-                // For unknown domains, fetch metadata to check if it's actually media
                 try {
                     const metadata = await fetchPageMetadata(url);
                     if (metadata.type === 'image' || metadata.type === 'video' || metadata.type === 'audio') {
@@ -406,7 +890,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         };
                     }
                 } catch (err) {
-                    // If metadata fetch fails, treat as regular link
                     console.log('Metadata fetch failed for:', url, err);
                 }
             }
@@ -504,7 +987,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 case 'image':
                 case 'video':
                 case 'audio':
-                    // For images/videos/audio from metadata detection
                     const isVideo = embedData.type === 'video';
                     const isAudio = embedData.type === 'audio';
                     const mediaUrl = embedData.url;
@@ -551,18 +1033,15 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const urlRegex = /(https?:\/\/[^\s]+)/g;
             const linkedText = text.replace(urlRegex, (url) => {
-                // Don't linkify URLs that are media embeds (they'll be removed anyway)
                 if (isYouTubeUrl(url) || isDirectMediaUrl(url)) {
                     return '';
                 }
-                // Create a clickable link without any extra HTML that will get escaped
                 return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`;
             });
             
             return linkedText;
         }
 
-        // ========== LOAD YOUTUBE IFrame API ==========
         function loadYouTubeAPI() {
             if (window.YT && window.YT.Player) {
                 console.log('✅ YouTube API already loaded');
@@ -580,7 +1059,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     resolve();
                 };
                 
-                // Timeout after 10 seconds
                 setTimeout(() => {
                     if (!window.YT) {
                         reject(new Error('YouTube API load timeout'));
@@ -589,19 +1067,16 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        // Call this when chat starts
         loadYouTubeAPI().catch(err => console.warn('YouTube API load failed:', err));
 
         // ========== REACTION FUNCTIONS ==========
         
         function showReactionPicker(button, messageId, messageElement) {
-            // Remove existing picker
             if (activeReactionPicker) {
                 activeReactionPicker.remove();
                 activeReactionPicker = null;
             }
             
-            // Create reaction picker
             const picker = document.createElement('div');
             picker.className = 'reaction-picker';
             picker.style.cssText = `
@@ -618,18 +1093,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 white-space: nowrap;
             `;
             
-            // Get button position relative to viewport
             const rect = button.getBoundingClientRect();
-            
-            // Get the entire message bubble position
             const messageBubble = messageElement.querySelector('.message-bubble');
             const bubbleRect = messageBubble ? messageBubble.getBoundingClientRect() : rect;
             
-            // Calculate picker dimensions
             const pickerWidth = 280;
             const pickerHeight = 50;
             
-            // Calculate vertical position
             let top = rect.top - pickerHeight - 10;
             if (top < 10) {
                 top = rect.bottom + 10;
@@ -638,7 +1108,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 top = window.innerHeight - pickerHeight - 10;
             }
             
-            // Calculate horizontal position based on message side
             let left;
             
             if (messageElement.classList.contains('own')) {
@@ -658,7 +1127,6 @@ document.addEventListener('DOMContentLoaded', () => {
             picker.style.top = `${top}px`;
             picker.style.left = `${left}px`;
             
-            // Add common reactions
             quickReactions.forEach(emoji => {
                 const reactionBtn = document.createElement('button');
                 reactionBtn.textContent = emoji;
@@ -688,7 +1156,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 picker.appendChild(reactionBtn);
             });
             
-            // Add custom emoji button
             const customBtn = document.createElement('button');
             customBtn.textContent = '➕';
             customBtn.style.cssText = `
@@ -1242,6 +1709,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 showChatScreen();
                 setupOnlineStatus();
                 listenForMessages();
+                listenForCalls();
                 isInitialized = true;
                 console.log('✅ Chat ready!');
                 
@@ -1282,7 +1750,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 sendButton.disabled = true;
                 sendButton.textContent = '⏳';
 
-                // Use async link detection
                 const { processedText, mediaEmbed } = await detectAndProcessLinksAsync(text);
                 
                 console.log('📝 Processed message:', { originalText: text, processedText, mediaEmbed });
@@ -1600,23 +2067,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     editedBadge = '<span class="edited-badge" style="font-size: 10px; color: var(--text-secondary); margin-left: 5px;" title="Message was edited">(edited)</span>';
                 }
                 
-                // Process mentions and links
                 const { mentionedUsers } = processMentions(textContent);
                 let processedText = textContent;
                 
-                // Apply linkify (this adds HTML links)
                 processedText = linkifyAndProcessText(processedText);
-                
-                // Apply mention highlighting
                 processedText = highlightMentions(processedText);
                 
-                // Escape HTML except for our generated tags
-                // We need to preserve <a> and <span> tags that we just created
                 const tempDiv = document.createElement('div');
                 tempDiv.innerHTML = processedText;
                 
-                // Get the text content without our HTML tags for mention detection
-                // But keep the HTML for display
                 content += `<div class="message-text">${tempDiv.innerHTML}${editedBadge}</div>`;
             }
             
@@ -1701,7 +2160,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 userRef.set({
                     username: username,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    userColor: userColor
                 });
 
                 window.addEventListener('beforeunload', () => {
@@ -1714,6 +2174,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             }
                         });
                         window.youtubePlayers.clear();
+                        cleanupCall();
                     } catch (e) {}
                 });
 
