@@ -55,7 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const typingIndicator = document.getElementById('typing-indicator');
         const colorButtons = document.querySelectorAll('.color-btn');
 
-        // Voice Call UI Elements - Add these to your HTML
+        // Voice Call UI Elements
         const callBtn = document.getElementById('call-btn');
         const callModal = document.getElementById('call-modal');
         const callStatus = document.getElementById('call-status');
@@ -171,6 +171,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (speakerCallBtn) speakerCallBtn.addEventListener('click', toggleSpeaker);
         if (closeCallModal) closeCallModal.addEventListener('click', () => {
             if (callModal) callModal.classList.add('hidden');
+            // If there's a pending call, reject it when closing modal
+            if (window.pendingOffer && !callActive) {
+                rejectCall();
+            }
         });
         if (closeUserList) closeUserList.addEventListener('click', () => {
             if (userListModal) userListModal.classList.add('hidden');
@@ -367,6 +371,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (peerConnection.connectionState === 'connected') {
                         startCallTimer();
                         updateCallStatus('Connected');
+                        // Show accept/reject buttons only for incoming calls, hide them for outgoing
+                        const incomingActions = document.querySelector('.incoming-actions');
+                        if (incomingActions) incomingActions.style.display = 'none';
                     } else if (peerConnection.connectionState === 'failed') {
                         endCall();
                         updateCallStatus('Connection failed');
@@ -395,6 +402,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (callModal) {
                     callModal.classList.remove('hidden');
                     updateCallStatus(`Calling ${targetUsername}...`);
+                    // Hide accept/reject buttons for outgoing calls
+                    const incomingActions = document.querySelector('.incoming-actions');
+                    if (incomingActions) incomingActions.style.display = 'none';
+                    // Show call actions
+                    const callActions = document.querySelector('.call-actions');
+                    if (callActions) callActions.style.display = 'flex';
                 }
                 
             } catch (err) {
@@ -432,6 +445,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             if (peerConnection && peerConnection.signalingState === 'have-local-offer') {
                                 await peerConnection.setRemoteDescription(new RTCSessionDescription(signal.answer));
                                 snapshot.ref.remove();
+                                // Update call status
+                                updateCallStatus('Connected');
+                                startCallTimer();
                             }
                             break;
                             
@@ -489,14 +505,25 @@ document.addEventListener('DOMContentLoaded', () => {
             // Show incoming call notification
             if (callModal) {
                 callModal.classList.remove('hidden');
-                updateCallStatus(`Incoming call from ${signal.fromUsername}...`);
+                updateCallStatus(`📞 Incoming call from ${signal.fromUsername}...`);
                 
                 // Store the offer for later
                 window.pendingOffer = signal.offer;
                 window.pendingSignalId = signalId;
+                window.pendingFromUsername = signal.fromUsername;
+                
+                // Show accept/reject buttons, hide call actions initially
+                const incomingActions = document.querySelector('.incoming-actions');
+                const callActions = document.querySelector('.call-actions');
+                if (incomingActions) incomingActions.style.display = 'flex';
+                if (callActions) callActions.style.display = 'none';
                 
                 // Play incoming call sound
                 playCallSound();
+                
+                // Add animation to modal
+                const modalContent = callModal.querySelector('.modal-content');
+                if (modalContent) modalContent.classList.add('ring-animation');
             }
         }
         
@@ -504,6 +531,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!window.pendingOffer || !currentCallWith) return;
             
             try {
+                // Remove ring animation
+                const modalContent = callModal.querySelector('.modal-content');
+                if (modalContent) modalContent.classList.remove('ring-animation');
+                
                 // Request microphone access
                 localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
                 
@@ -536,6 +567,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 };
                 
+                // Handle connection state changes
+                peerConnection.onconnectionstatechange = () => {
+                    console.log('Connection state:', peerConnection.connectionState);
+                    if (peerConnection.connectionState === 'connected') {
+                        startCallTimer();
+                        updateCallStatus('Connected');
+                    } else if (peerConnection.connectionState === 'failed') {
+                        endCall();
+                        updateCallStatus('Connection failed');
+                    }
+                };
+                
                 // Set remote description
                 await peerConnection.setRemoteDescription(new RTCSessionDescription(window.pendingOffer));
                 
@@ -552,16 +595,24 @@ document.addEventListener('DOMContentLoaded', () => {
                     window.database.ref(`calls/${window.pendingSignalId}`).remove();
                     window.pendingOffer = null;
                     window.pendingSignalId = null;
+                    window.pendingFromUsername = null;
                 }
                 
                 callActive = true;
                 updateCallStatus(`Connected with ${currentCallWith.username}`);
                 startCallTimer();
                 
+                // Show call actions, hide accept/reject buttons
+                const incomingActions = document.querySelector('.incoming-actions');
+                const callActions = document.querySelector('.call-actions');
+                if (incomingActions) incomingActions.style.display = 'none';
+                if (callActions) callActions.style.display = 'flex';
+                
             } catch (err) {
                 console.error('Error accepting call:', err);
                 alert('Could not start call. Please check microphone permissions.');
                 cleanupCall();
+                if (callModal) callModal.classList.add('hidden');
             }
         }
         
@@ -573,8 +624,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 window.database.ref(`calls/${currentCallWith.signalId}`).remove();
             }
+            
+            // Remove ring animation
+            const modalContent = callModal.querySelector('.modal-content');
+            if (modalContent) modalContent.classList.remove('ring-animation');
+            
             cleanupCall();
             if (callModal) callModal.classList.add('hidden');
+            
+            // Clear pending offer
+            window.pendingOffer = null;
+            window.pendingSignalId = null;
+            window.pendingFromUsername = null;
         }
         
         function endCall() {
@@ -602,9 +663,25 @@ document.addEventListener('DOMContentLoaded', () => {
             const remoteAudio = document.getElementById('remote-audio');
             if (remoteAudio) {
                 isSpeakerOn = !isSpeakerOn;
-                remoteAudio.style.transform = isSpeakerOn ? 'scale(1.1)' : 'scale(1)';
+                if (isSpeakerOn) {
+                    remoteAudio.style.transform = 'scale(1)';
+                    remoteAudio.style.position = 'fixed';
+                    remoteAudio.style.bottom = '10px';
+                    remoteAudio.style.right = '10px';
+                    remoteAudio.style.width = '200px';
+                    remoteAudio.style.zIndex = '10001';
+                    remoteAudio.style.display = 'block';
+                } else {
+                    remoteAudio.style.transform = 'scale(1)';
+                    remoteAudio.style.position = '';
+                    remoteAudio.style.bottom = '';
+                    remoteAudio.style.right = '';
+                    remoteAudio.style.width = '';
+                    remoteAudio.style.display = 'none';
+                }
                 if (speakerCallBtn) {
                     speakerCallBtn.textContent = isSpeakerOn ? '🔊' : '🔈';
+                    speakerCallBtn.title = isSpeakerOn ? 'Disable speaker' : 'Enable speaker';
                 }
             }
         }
@@ -664,6 +741,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const remoteAudio = document.getElementById('remote-audio');
                 if (remoteAudio) {
                     remoteAudio.srcObject = null;
+                    remoteAudio.style.display = 'none';
+                    remoteAudio.style.transform = '';
+                    remoteAudio.style.position = '';
                 }
                 remoteStream = null;
             }
@@ -671,6 +751,7 @@ document.addEventListener('DOMContentLoaded', () => {
             callActive = false;
             currentCallWith = null;
             isMuted = false;
+            isSpeakerOn = false;
             
             if (muteCallBtn) muteCallBtn.textContent = '🎤';
             if (speakerCallBtn) speakerCallBtn.textContent = '🔈';
@@ -690,8 +771,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // Ring pattern
                 let count = 0;
+                let ringInterval;
+                
                 const ring = () => {
-                    if (count >= 3 || callActive) {
+                    if (count >= 5 || callActive || !window.pendingOffer) {
+                        if (ringInterval) clearInterval(ringInterval);
                         oscillator.stop();
                         return;
                     }
@@ -701,11 +785,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
                     
                     count++;
-                    setTimeout(ring, 1500);
                 };
                 
                 oscillator.start();
                 ring();
+                ringInterval = setInterval(ring, 1500);
+                
+                // Store interval to clean up
+                window.callRingInterval = ringInterval;
                 
             } catch (e) {
                 console.log('Web Audio API not available');
