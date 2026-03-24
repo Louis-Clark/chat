@@ -14,6 +14,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let callTimer = null;
     let callStartTime = 0;
     let pendingCallData = null; // Store pending call data separately
+    let ringInterval = null;
+    let ringOscillator = null;
+    let ringAudioContext = null;
     
     // WebRTC Configuration
     const configuration = {
@@ -29,9 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeApp();
 
     function initializeApp() {
-        console.log('🚀 App initializing...');
-        console.log('firebase ready:', !!window.firebaseReady);
-        console.log('database ready:', !!window.database);
+        console.log('📱 Chat app starting...');
         
         // DOM Elements
         const setupScreen = document.getElementById('setup-screen');
@@ -92,7 +93,6 @@ document.addEventListener('DOMContentLoaded', () => {
         let pendingMediaUrls = new Map();
         let isMuted = false;
         let isSpeakerOn = false;
-        let ringInterval = null;
 
         console.log('💾 User ID:', userId);
 
@@ -168,18 +168,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (callBtn) callBtn.addEventListener('click', showUserList);
         
         if (acceptCallBtn) {
-            console.log('✅ Accept call button found, attaching listener');
             acceptCallBtn.addEventListener('click', (e) => {
                 console.log('🎯 Accept call button clicked');
-                console.log('Pending call data exists:', !!pendingCallData);
-                if (pendingCallData) {
-                    console.log('Pending call data offer type:', pendingCallData.offer?.type);
-                    console.log('Pending call data offer sdp length:', pendingCallData.offer?.sdp?.length);
-                }
                 acceptCall();
             });
-        } else {
-            console.error('❌ Accept call button not found in DOM');
         }
         
         if (rejectCallBtn) {
@@ -289,6 +281,26 @@ document.addEventListener('DOMContentLoaded', () => {
         let messagesCache = new Map();
 
         // ========== VOICE CALL FUNCTIONS ==========
+        
+        function stopRingSound() {
+            console.log('🔇 Stopping ring sound');
+            if (ringInterval) {
+                clearInterval(ringInterval);
+                ringInterval = null;
+            }
+            if (ringOscillator) {
+                try {
+                    ringOscillator.stop();
+                } catch (e) {
+                    // Oscillator might already be stopped
+                }
+                ringOscillator = null;
+            }
+            if (ringAudioContext) {
+                ringAudioContext.close().catch(console.log);
+                ringAudioContext = null;
+            }
+        }
         
         function showUserList() {
             if (!userListModal || !userListContent) return;
@@ -416,8 +428,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 await peerConnection.setLocalDescription(offer);
                 
                 console.log('📞 Sending call offer to:', targetUserId);
-                console.log('Offer type:', offer.type);
-                console.log('Offer sdp length:', offer.sdp?.length);
                 
                 // Store the offer as a plain object with type and sdp
                 const offerData = {
@@ -464,7 +474,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const signal = snapshot.val();
                 const signalId = snapshot.key;
                 
-                console.log('📞 Received signal:', signal.type, 'from:', signal.fromUsername, 'target:', signal.target, 'myId:', userId);
+                console.log('📞 Received signal:', signal.type, 'from:', signal.fromUsername);
                 
                 // Check if this signal is for me
                 if (signal.target === userId) {
@@ -473,9 +483,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     switch (signal.type) {
                         case 'call-offer':
                             console.log('📞 Processing call offer from:', signal.fromUsername);
-                            console.log('Offer data:', signal.offer);
-                            console.log('Offer type:', signal.offer?.type);
-                            console.log('Offer sdp length:', signal.offer?.sdp?.length);
                             
                             if (!callActive && !pendingCallData) {
                                 // Validate that the offer has proper type and sdp
@@ -484,7 +491,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     return;
                                 }
                                 
-                                // Store the offer data - ensure it has type and sdp
+                                // Store the offer data
                                 pendingCallData = {
                                     offer: {
                                         type: signal.offer.type,
@@ -495,7 +502,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     fromUsername: signal.fromUsername,
                                     fromUserColor: signal.fromUserColor
                                 };
-                                console.log('✅ Stored pending call data with valid offer:', pendingCallData.offer.type);
+                                console.log('✅ Stored pending call data');
                                 handleIncomingCall(pendingCallData);
                             } else {
                                 console.log('📞 Busy or already have pending call, rejecting');
@@ -532,9 +539,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             
                         case 'call-reject':
                             console.log('📞 Call rejected');
+                            stopRingSound();
                             if (callActive && currentCallWith && currentCallWith.id === signal.from) {
                                 updateCallStatus('Call rejected');
-                                if (ringInterval) clearInterval(ringInterval);
                                 setTimeout(() => {
                                     cleanupCall();
                                     if (callModal) callModal.classList.add('hidden');
@@ -546,9 +553,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             
                         case 'call-end':
                             console.log('📞 Call ended');
+                            stopRingSound();
                             if (callActive) {
                                 updateCallStatus('Call ended');
-                                if (ringInterval) clearInterval(ringInterval);
                                 setTimeout(() => {
                                     cleanupCall();
                                     if (callModal) callModal.classList.add('hidden');
@@ -557,16 +564,12 @@ document.addEventListener('DOMContentLoaded', () => {
                             }
                             break;
                     }
-                } else {
-                    console.log('❌ Signal not for me, target:', signal.target);
                 }
             });
         }
         
         function handleIncomingCall(callData) {
             console.log('📞 Handling incoming call from:', callData.fromUsername);
-            console.log('Call offer type:', callData.offer.type);
-            console.log('Call offer sdp length:', callData.offer.sdp?.length);
             
             if (callActive) {
                 sendCallSignal(callData.from, 'call-reject', { reason: 'busy' });
@@ -591,7 +594,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const callActions = document.querySelector('.call-actions');
                 if (incomingActions) {
                     incomingActions.style.display = 'flex';
-                    console.log('✅ Incoming actions shown');
                 }
                 if (callActions) callActions.style.display = 'none';
                 
@@ -606,7 +608,6 @@ document.addEventListener('DOMContentLoaded', () => {
         
         async function acceptCall() {
             console.log('🎯 Accepting call...');
-            console.log('Pending call data exists:', !!pendingCallData);
             
             if (!pendingCallData) {
                 console.error('No pending call data found');
@@ -629,13 +630,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             try {
-                // Remove ring animation and stop sound
+                // Stop ring sound immediately when accepting
+                stopRingSound();
+                
+                // Remove ring animation
                 const modalContent = callModal.querySelector('.modal-content');
                 if (modalContent) modalContent.classList.remove('ring-animation');
-                if (ringInterval) {
-                    clearInterval(ringInterval);
-                    ringInterval = null;
-                }
                 
                 // Request microphone access
                 console.log('🎤 Requesting microphone access...');
@@ -648,7 +648,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Add local stream tracks
                 localStream.getTracks().forEach(track => {
                     peerConnection.addTrack(track, localStream);
-                    console.log('➕ Added local track:', track.kind);
                 });
                 
                 // Handle incoming remote stream
@@ -686,11 +685,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 };
                 
-                // Set remote description from the stored offer - create proper RTCSessionDescription
+                // Set remote description from the stored offer
                 console.log('📞 Setting remote description...');
-                console.log('Pending offer type:', pendingCallData.offer.type);
-                console.log('Pending offer sdp length:', pendingCallData.offer.sdp?.length);
-                
                 const offerDescription = new RTCSessionDescription({
                     type: pendingCallData.offer.type,
                     sdp: pendingCallData.offer.sdp
@@ -715,7 +711,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     answer: answerData
                 });
                 
-                // Clean up pending call data ONLY AFTER successfully sending answer
+                // Clean up pending call data
                 const signalIdToRemove = pendingCallData.signalId;
                 pendingCallData = null;
                 
@@ -746,6 +742,9 @@ document.addEventListener('DOMContentLoaded', () => {
         function rejectCall() {
             console.log('🎯 Rejecting call...');
             
+            // Stop ring sound immediately
+            stopRingSound();
+            
             if (pendingCallData && pendingCallData.signalId) {
                 sendCallSignal(pendingCallData.from, 'call-reject', {
                     reason: 'rejected',
@@ -760,13 +759,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.database.ref(`calls/${currentCallWith.signalId}`).remove();
             }
             
-            // Remove ring animation and stop sound
+            // Remove ring animation
             const modalContent = callModal.querySelector('.modal-content');
             if (modalContent) modalContent.classList.remove('ring-animation');
-            if (ringInterval) {
-                clearInterval(ringInterval);
-                ringInterval = null;
-            }
             
             cleanupCall();
             if (callModal) callModal.classList.add('hidden');
@@ -777,6 +772,10 @@ document.addEventListener('DOMContentLoaded', () => {
         
         function endCall() {
             console.log('📞 Ending call...');
+            
+            // Stop any playing sounds
+            stopRingSound();
+            
             if (callActive && currentCallWith) {
                 sendCallSignal(currentCallWith.id, 'call-end', {});
             }
@@ -861,6 +860,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         function cleanupCall() {
+            console.log('🧹 Cleaning up call resources');
+            
+            // Stop ring sound if still playing
+            stopRingSound();
+            
             if (callTimer) {
                 clearInterval(callTimer);
                 callTimer = null;
@@ -900,33 +904,45 @@ document.addEventListener('DOMContentLoaded', () => {
         function playCallSound() {
             if (!soundEnabled) return;
             
+            // Stop any existing ring sound first
+            stopRingSound();
+            
             try {
-                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const oscillator = audioContext.createOscillator();
-                const gainNode = audioContext.createGain();
-                
-                oscillator.connect(gainNode);
-                gainNode.connect(audioContext.destination);
+                ringAudioContext = new (window.AudioContext || window.webkitAudioContext)();
                 
                 let count = 0;
                 
-                const ring = () => {
-                    if (count >= 8 || callActive || !pendingCallData) {
-                        if (ringInterval) clearInterval(ringInterval);
-                        oscillator.stop();
+                const playRing = () => {
+                    if (!pendingCallData || callActive || count >= 8) {
+                        stopRingSound();
                         return;
                     }
                     
-                    oscillator.frequency.setValueAtTime(440, audioContext.currentTime);
-                    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.8);
+                    const oscillator = ringAudioContext.createOscillator();
+                    const gainNode = ringAudioContext.createGain();
                     
+                    oscillator.connect(gainNode);
+                    gainNode.connect(ringAudioContext.destination);
+                    
+                    oscillator.frequency.setValueAtTime(440, ringAudioContext.currentTime);
+                    gainNode.gain.setValueAtTime(0.3, ringAudioContext.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, ringAudioContext.currentTime + 0.8);
+                    
+                    oscillator.start();
+                    oscillator.stop(ringAudioContext.currentTime + 0.8);
+                    
+                    ringOscillator = oscillator;
                     count++;
                 };
                 
-                oscillator.start();
-                ring();
-                ringInterval = setInterval(ring, 2000);
+                playRing();
+                ringInterval = setInterval(() => {
+                    if (pendingCallData && !callActive) {
+                        playRing();
+                    } else {
+                        stopRingSound();
+                    }
+                }, 2000);
                 
             } catch (e) {
                 console.log('Web Audio API not available');
