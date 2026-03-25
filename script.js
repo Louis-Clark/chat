@@ -1,5 +1,5 @@
-// Advanced Chat Application Script with Voice Calls - Performance Optimized
-document.addEventListener('DOMContentLoaded', () => {
+// Advanced Chat Application Script with Voice Calls - React bootstrap + optimized runtime
+function initializeLegacyChatApp() {
     console.log('📱 Chat app starting...');
     
     // YouTube Player instances cache
@@ -188,8 +188,9 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Handle color selection
             if (target.classList && target.classList.contains('color-btn')) {
-                const btns = document.querySelectorAll('.color-btn');
-                btns.forEach(b => b.classList.remove('selected'));
+                if (colorButtons && colorButtons.length) {
+                    colorButtons.forEach(b => b.classList.remove('selected'));
+                }
                 target.classList.add('selected');
                 userColor = target.dataset.color;
                 localStorage.setItem('userColor', userColor);
@@ -395,15 +396,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         removeReaction(messageId, reactionEmoji);
                     }
                 }
-            });
-            
-            // Handle reply preview click
-            chatMessages.addEventListener('click', (e) => {
+                
+                // Handle reply preview click
                 const replyPreview = e.target.closest('.message-reply');
                 if (replyPreview) {
-                    const messageElement = replyPreview.closest('.message');
                     if (messageElement) {
-                        const messageId = messageElement.id.replace('message-', '');
                         const messageData = getMessageDataById(messageId);
                         if (messageData && messageData.replyTo && messageData.replyTo.id) {
                             scrollToMessage(`message-${messageData.replyTo.id}`);
@@ -2348,14 +2345,6 @@ document.addEventListener('DOMContentLoaded', () => {
         function displayMessage(message, options = {}) {
             if (!message || !chatMessages) return;
             
-            console.log('💬 Displaying message:', {
-                id: message.id,
-                text: message.text,
-                mediaEmbed: message.mediaEmbed,
-                isDeleted: message.isDeleted,
-                reactions: message.reactions
-            });
-            
             if (message.id) {
                 storeMessageData(message.id, message);
             }
@@ -2418,7 +2407,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             if (message.mediaEmbed && !message.isDeleted) {
-                console.log('🎨 Creating media embed for:', message.mediaEmbed);
                 content += createMediaEmbed(message.mediaEmbed, messageId);
             }
             
@@ -2463,17 +2451,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             chatMessages.appendChild(messageDiv);
-            
-            const replyPreview = messageDiv.querySelector('.message-reply');
-            if (replyPreview) {
-                replyPreview.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const replyId = replyPreview.getAttribute('data-reply-id');
-                    if (replyId) {
-                        scrollToMessage(`message-${replyId}`);
-                    }
-                });
-            }
             
             if (!options.skipSound && message.userId !== userId && !message.isDeleted) {
                 const { mentionedUsers } = processMentions(message.text);
@@ -2929,5 +2906,24 @@ document.addEventListener('DOMContentLoaded', () => {
             div.textContent = text;
             return div.innerHTML;
         }
+    }
+}
+
+function ChatApp() {
+    React.useEffect(() => {
+        initializeLegacyChatApp();
+    }, []);
+
+    return null;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const appRoot = document.getElementById('app-root');
+    if (window.ReactDOM && appRoot) {
+        const root = ReactDOM.createRoot(appRoot);
+        root.render(React.createElement(ChatApp));
+    } else {
+        console.warn('React runtime not available, falling back to direct app initialization.');
+        initializeLegacyChatApp();
     }
 });
