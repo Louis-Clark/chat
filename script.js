@@ -27,6 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let rafId = null;
     let intersectionObserver = null;
     let renderedMessages = new Map();
+    let appAudioContext = null;
     
     // WebRTC Configuration
     const configuration = {
@@ -342,7 +343,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const clientHeight = chatMessages.clientHeight;
                 isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
                 lastScrollTop = scrollTop;
-            }, 100));
+            }, 100), { passive: true });
         }
         
         // Event delegation for message actions - optimized with single listener
@@ -2705,21 +2706,21 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!soundEnabled) return;
             
             try {
-                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const oscillator = audioContext.createOscillator();
-                const gainNode = audioContext.createGain();
+                appAudioContext = appAudioContext || new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = appAudioContext.createOscillator();
+                const gainNode = appAudioContext.createGain();
                 
                 oscillator.connect(gainNode);
-                gainNode.connect(audioContext.destination);
+                gainNode.connect(appAudioContext.destination);
                 
-                oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-                oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1);
+                oscillator.frequency.setValueAtTime(800, appAudioContext.currentTime);
+                oscillator.frequency.setValueAtTime(600, appAudioContext.currentTime + 0.1);
                 
-                gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
-                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+                gainNode.gain.setValueAtTime(0.2, appAudioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, appAudioContext.currentTime + 0.5);
                 
-                oscillator.start(audioContext.currentTime);
-                oscillator.stop(audioContext.currentTime + 0.5);
+                oscillator.start(appAudioContext.currentTime);
+                oscillator.stop(appAudioContext.currentTime + 0.5);
             } catch (e) {
                 console.log('Web Audio API not available, skipping notification sound');
             }
@@ -2839,22 +2840,22 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!soundEnabled) return;
             
             try {
-                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const oscillator = audioContext.createOscillator();
-                const gainNode = audioContext.createGain();
+                appAudioContext = appAudioContext || new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = appAudioContext.createOscillator();
+                const gainNode = appAudioContext.createGain();
                 
                 oscillator.connect(gainNode);
-                gainNode.connect(audioContext.destination);
+                gainNode.connect(appAudioContext.destination);
                 
-                oscillator.frequency.setValueAtTime(1000, audioContext.currentTime);
-                oscillator.frequency.setValueAtTime(1200, audioContext.currentTime + 0.1);
-                oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.2);
+                oscillator.frequency.setValueAtTime(1000, appAudioContext.currentTime);
+                oscillator.frequency.setValueAtTime(1200, appAudioContext.currentTime + 0.1);
+                oscillator.frequency.setValueAtTime(800, appAudioContext.currentTime + 0.2);
                 
-                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+                gainNode.gain.setValueAtTime(0.3, appAudioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, appAudioContext.currentTime + 0.5);
                 
-                oscillator.start(audioContext.currentTime);
-                oscillator.stop(audioContext.currentTime + 0.5);
+                oscillator.start(appAudioContext.currentTime);
+                oscillator.stop(appAudioContext.currentTime + 0.5);
             } catch (e) {
                 console.log('Web Audio API not available, skipping mention sound');
             }
