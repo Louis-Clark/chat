@@ -1,4 +1,4 @@
-// Advanced Chat Application Script with Voice Calls
+// Advanced Chat Application Script with Voice Calls - Performance Optimized
 document.addEventListener('DOMContentLoaded', () => {
     console.log('📱 Chat app starting...');
     
@@ -13,10 +13,20 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentCallWith = null;
     let callTimer = null;
     let callStartTime = 0;
-    let pendingCallData = null; // Store pending call data separately
+    let pendingCallData = null;
     let ringInterval = null;
     let ringOscillator = null;
     let ringAudioContext = null;
+    
+    // Performance optimizations
+    let messageBatchTimer = null;
+    let pendingMessages = [];
+    let scrollDebounceTimer = null;
+    let isNearBottom = true;
+    let lastScrollTop = 0;
+    let rafId = null;
+    let intersectionObserver = null;
+    let renderedMessages = new Map();
     
     // WebRTC Configuration
     const configuration = {
@@ -29,49 +39,45 @@ document.addEventListener('DOMContentLoaded', () => {
         ]
     };
     
+    // Debounce utility
+    const debounce = (fn, delay) => {
+        let timeoutId;
+        return (...args) => {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => fn(...args), delay);
+        };
+    };
+    
+    // Throttle utility
+    const throttle = (fn, delay) => {
+        let lastCall = 0;
+        return (...args) => {
+            const now = Date.now();
+            if (now - lastCall >= delay) {
+                lastCall = now;
+                fn(...args);
+            }
+        };
+    };
+    
     initializeApp();
 
     function initializeApp() {
         console.log('📱 Chat app starting...');
         
-        // DOM Elements
-        const setupScreen = document.getElementById('setup-screen');
-        const chatScreen = document.getElementById('chat-screen');
-        const usernameInput = document.getElementById('username-input');
-        const enterChatBtn = document.getElementById('enter-chat');
-        const soundToggle = document.getElementById('sound-enabled');
-        const messageInput = document.getElementById('message-input');
-        const sendButton = document.getElementById('send-button');
-        const chatMessages = document.getElementById('chat-messages');
-        const currentUserDisplay = document.getElementById('current-user');
-        const themeToggle = document.getElementById('theme-toggle');
-        const clearChatBtn = document.getElementById('clear-chat');
-        const emojiBtn = document.getElementById('emoji-btn');
-        const uploadBtn = document.getElementById('upload-btn');
-        const fileInput = document.getElementById('file-input');
-        const voiceBtn = document.getElementById('voice-btn');
-        const voiceRecordingUI = document.getElementById('voice-recording');
-        const stopRecordingBtn = document.getElementById('stop-recording');
-        const recordingTimeDisplay = document.getElementById('recording-time');
-        const emojiPicker = document.getElementById('emoji-picker');
-        const typingIndicator = document.getElementById('typing-indicator');
-        const colorButtons = document.querySelectorAll('.color-btn');
-
-        // Voice Call UI Elements
-        const callBtn = document.getElementById('call-btn');
-        const callModal = document.getElementById('call-modal');
-        const callStatus = document.getElementById('call-status');
-        const callTimerDisplay = document.getElementById('call-timer');
-        const acceptCallBtn = document.getElementById('accept-call');
-        const rejectCallBtn = document.getElementById('reject-call');
-        const endCallBtn = document.getElementById('end-call');
-        const muteCallBtn = document.getElementById('mute-call');
-        const speakerCallBtn = document.getElementById('speaker-call');
-        const closeCallModal = document.getElementById('close-call-modal');
-        const userListModal = document.getElementById('user-list-modal');
-        const userListContent = document.getElementById('user-list-content');
-        const closeUserList = document.getElementById('close-user-list');
-
+        // DOM Elements - Lazy load references
+        let setupScreen, chatScreen, usernameInput, enterChatBtn, soundToggle,
+            messageInput, sendButton, chatMessages, currentUserDisplay, themeToggle,
+            clearChatBtn, emojiBtn, uploadBtn, fileInput, voiceBtn, voiceRecordingUI,
+            stopRecordingBtn, recordingTimeDisplay, emojiPicker, typingIndicator, colorButtons;
+        
+        // Lazy DOM element getter
+        const getElement = (id) => document.getElementById(id);
+        
+        // Voice Call UI Elements - Lazy loaded
+        let callBtn, callModal, callStatus, callTimerDisplay, acceptCallBtn, rejectCallBtn,
+            endCallBtn, muteCallBtn, speakerCallBtn, closeCallModal, userListModal, userListContent, closeUserList;
+        
         // State
         let username = localStorage.getItem('username') || '';
         let userColor = localStorage.getItem('userColor') || '#6C5CE7';
@@ -93,15 +99,38 @@ document.addEventListener('DOMContentLoaded', () => {
         let pendingMediaUrls = new Map();
         let isMuted = false;
         let isSpeakerOn = false;
-
+        
+        // Message queue for batching
+        let messageQueue = [];
+        let isProcessingQueue = false;
+        
+        // Initialize Intersection Observer for lazy loading
+        if ('IntersectionObserver' in window) {
+            intersectionObserver = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const img = entry.target.querySelector('img');
+                        if (img && img.dataset.src) {
+                            img.src = img.dataset.src;
+                            img.removeAttribute('data-src');
+                        }
+                        const video = entry.target.querySelector('video');
+                        if (video && video.dataset.src) {
+                            video.src = video.dataset.src;
+                            video.removeAttribute('data-src');
+                        }
+                    }
+                });
+            }, { rootMargin: '50px' });
+        }
+        
         console.log('💾 User ID:', userId);
-
-        // Initialize theme
+        
+        // Initialize theme with CSS class for performance
         if (isDarkMode) {
             document.body.classList.add('dark-mode');
-            if (themeToggle) themeToggle.textContent = '☀️';
         }
-
+        
         if (username) {
             showChatScreen();
             setupOnlineStatus();
@@ -109,177 +138,295 @@ document.addEventListener('DOMContentLoaded', () => {
             listenForCalls();
             isInitialized = true;
         }
-
+        
         // Common emojis for quick reactions
         const quickReactions = ['👍', '❤️', '😂', '😮', '😢', '🔥', '🎉', '👎'];
-
-        // Event Listeners - Setup
-        if (enterChatBtn) enterChatBtn.addEventListener('click', enterChat);
-        if (usernameInput) usernameInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') enterChat();
+        
+        // Event Listeners - Setup with event delegation
+        document.addEventListener('click', (e) => {
+            const target = e.target;
+            
+            // Handle enter chat
+            if (target.id === 'enter-chat' || (target.id === 'username-input' && e.key === 'Enter')) {
+                if (target.id === 'username-input') {
+                    if (e.key === 'Enter') enterChat();
+                } else {
+                    enterChat();
+                }
+            }
+            
+            // Handle theme toggle
+            if (target.id === 'theme-toggle') {
+                toggleTheme();
+            }
+            
+            // Handle clear chat
+            if (target.id === 'clear-chat') {
+                clearChat();
+            }
+            
+            // Handle reset session
+            if (target.id === 'reset-session') {
+                resetSession();
+            }
+            
+            // Handle file upload
+            if (target.id === 'upload-btn') {
+                const fileInput = getElement('file-input');
+                if (fileInput) fileInput.click();
+            }
+            
+            // Handle voice recording
+            if (target.id === 'voice-btn') {
+                startVoiceRecording();
+            }
+            
+            // Handle stop recording
+            if (target.id === 'stop-recording') {
+                stopVoiceRecording();
+            }
+            
+            // Handle color selection
+            if (target.classList && target.classList.contains('color-btn')) {
+                const btns = document.querySelectorAll('.color-btn');
+                btns.forEach(b => b.classList.remove('selected'));
+                target.classList.add('selected');
+                userColor = target.dataset.color;
+                localStorage.setItem('userColor', userColor);
+                const currentUserDisplay = getElement('current-user');
+                if (currentUserDisplay) {
+                    currentUserDisplay.style.color = userColor;
+                }
+            }
+            
+            // Handle call button
+            if (target.id === 'call-btn') {
+                showUserList();
+            }
+            
+            // Handle close modals
+            if (target.id === 'close-call-modal') {
+                const modal = getElement('call-modal');
+                if (modal) modal.classList.add('hidden');
+                if (pendingCallData && !callActive) {
+                    rejectCall();
+                }
+            }
+            
+            if (target.id === 'close-user-list') {
+                const modal = getElement('user-list-modal');
+                if (modal) modal.classList.add('hidden');
+            }
         });
-        if (soundToggle) {
+        
+        // Message input handling with debounce
+        if (messageInput = getElement('message-input')) {
+            messageInput.addEventListener('input', debounce(handleTyping, 300));
+            messageInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (currentEdit) {
+                        saveEditedMessage();
+                    } else {
+                        sendMessage();
+                    }
+                }
+            });
+        }
+        
+        // Send button
+        if (sendButton = getElement('send-button')) {
+            sendButton.addEventListener('click', () => {
+                if (currentEdit) {
+                    saveEditedMessage();
+                } else {
+                    sendMessage();
+                }
+            });
+        }
+        
+        // Sound toggle
+        if (soundToggle = getElement('sound-enabled')) {
             soundToggle.checked = soundEnabled;
             soundToggle.addEventListener('change', (e) => {
                 soundEnabled = e.target.checked;
                 localStorage.setItem('soundEnabled', soundEnabled);
             });
         }
-
-        // Event Listeners - Chat
-        if (sendButton) sendButton.addEventListener('click', () => {
-            if (currentEdit) {
-                saveEditedMessage();
-            } else {
-                sendMessage();
-            }
-        });
         
-        if (messageInput) messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                if (currentEdit) {
-                    saveEditedMessage();
-                } else {
-                    sendMessage();
-                }
-            }
-        });
-
-        if (messageInput) messageInput.addEventListener('input', handleTyping);
-
-        const resetSessionBtn = document.getElementById('reset-session');
-
-        // Event Listeners - Controls
-        if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
-        if (clearChatBtn) clearChatBtn.addEventListener('click', clearChat);
-        if (resetSessionBtn) resetSessionBtn.addEventListener('click', resetSession);
-        if (emojiBtn) emojiBtn.addEventListener('click', () => {
-            if (messageInput) messageInput.focus();
-        });
+        // File input
+        if (fileInput = getElement('file-input')) {
+            fileInput.addEventListener('change', handleFileUpload);
+        }
         
-        if (uploadBtn) uploadBtn.addEventListener('click', () => fileInput.click());
-        if (fileInput) fileInput.addEventListener('change', handleFileUpload);
-        
-        if (voiceBtn) voiceBtn.addEventListener('click', startVoiceRecording);
-        if (stopRecordingBtn) stopRecordingBtn.addEventListener('click', stopVoiceRecording);
-
-        // Voice Call Event Listeners
-        if (callBtn) callBtn.addEventListener('click', showUserList);
-        
-        if (acceptCallBtn) {
-            acceptCallBtn.addEventListener('click', (e) => {
-                console.log('🎯 Accept call button clicked');
-                acceptCall();
+        // Emoji button
+        if (emojiBtn = getElement('emoji-btn')) {
+            emojiBtn.addEventListener('click', () => {
+                const messageInput = getElement('message-input');
+                if (messageInput) messageInput.focus();
             });
         }
         
-        if (rejectCallBtn) {
-            rejectCallBtn.addEventListener('click', (e) => {
-                console.log('🎯 Reject call button clicked');
-                rejectCall();
-            });
+        // Voice call buttons - lazy bind
+        const initCallButtons = () => {
+            if (acceptCallBtn = getElement('accept-call')) {
+                acceptCallBtn.addEventListener('click', acceptCall);
+            }
+            if (rejectCallBtn = getElement('reject-call')) {
+                rejectCallBtn.addEventListener('click', rejectCall);
+            }
+            if (endCallBtn = getElement('end-call')) {
+                endCallBtn.addEventListener('click', endCall);
+            }
+            if (muteCallBtn = getElement('mute-call')) {
+                muteCallBtn.addEventListener('click', toggleMute);
+            }
+            if (speakerCallBtn = getElement('speaker-call')) {
+                speakerCallBtn.addEventListener('click', toggleSpeaker);
+            }
+        };
+        
+        // Get references for voice call elements
+        callBtn = getElement('call-btn');
+        callModal = getElement('call-modal');
+        callStatus = getElement('call-status');
+        callTimerDisplay = getElement('call-timer');
+        acceptCallBtn = getElement('accept-call');
+        rejectCallBtn = getElement('reject-call');
+        endCallBtn = getElement('end-call');
+        muteCallBtn = getElement('mute-call');
+        speakerCallBtn = getElement('speaker-call');
+        closeCallModal = getElement('close-call-modal');
+        userListModal = getElement('user-list-modal');
+        userListContent = getElement('user-list-content');
+        closeUserList = getElement('close-user-list');
+        
+        initCallButtons();
+        
+        // Get other DOM elements
+        setupScreen = getElement('setup-screen');
+        chatScreen = getElement('chat-screen');
+        usernameInput = getElement('username-input');
+        enterChatBtn = getElement('enter-chat');
+        chatMessages = getElement('chat-messages');
+        currentUserDisplay = getElement('current-user');
+        themeToggle = getElement('theme-toggle');
+        clearChatBtn = getElement('clear-chat');
+        uploadBtn = getElement('upload-btn');
+        voiceRecordingUI = getElement('voice-recording');
+        stopRecordingBtn = getElement('stop-recording');
+        recordingTimeDisplay = getElement('recording-time');
+        typingIndicator = getElement('typing-indicator');
+        colorButtons = document.querySelectorAll('.color-btn');
+        
+        // Set current user display
+        if (currentUserDisplay) {
+            currentUserDisplay.textContent = username;
+            currentUserDisplay.style.color = userColor;
         }
         
-        if (endCallBtn) endCallBtn.addEventListener('click', endCall);
-        if (muteCallBtn) muteCallBtn.addEventListener('click', toggleMute);
-        if (speakerCallBtn) speakerCallBtn.addEventListener('click', toggleSpeaker);
-        
-        if (closeCallModal) {
-            closeCallModal.addEventListener('click', () => {
-                if (callModal) callModal.classList.add('hidden');
-                if (pendingCallData && !callActive) {
-                    rejectCall();
+        // Initialize color buttons
+        if (colorButtons.length) {
+            colorButtons.forEach(btn => {
+                if (btn.dataset.color === userColor) {
+                    btn.classList.add('selected');
                 }
             });
         }
         
-        if (closeUserList) {
-            closeUserList.addEventListener('click', () => {
-                if (userListModal) userListModal.classList.add('hidden');
+        // Chat messages scroll handler with throttle
+        if (chatMessages) {
+            chatMessages.addEventListener('scroll', throttle(() => {
+                const scrollTop = chatMessages.scrollTop;
+                const scrollHeight = chatMessages.scrollHeight;
+                const clientHeight = chatMessages.clientHeight;
+                isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+                lastScrollTop = scrollTop;
+            }, 100));
+        }
+        
+        // Event delegation for message actions - optimized with single listener
+        if (chatMessages) {
+            chatMessages.addEventListener('click', (e) => {
+                const target = e.target;
+                const messageElement = target.closest('.message');
+                if (!messageElement) return;
+                
+                const messageId = messageElement.id.replace('message-', '');
+                
+                // Handle reply
+                if (target.classList.contains('reply-btn')) {
+                    const replyUsername = messageElement.querySelector('.message-username')?.textContent || '';
+                    const messageText = messageElement.querySelector('.message-text')?.textContent || '[Media]';
+                    startReply(messageId, replyUsername, messageText, messageElement);
+                }
+                
+                // Handle edit
+                if (target.classList.contains('edit-btn')) {
+                    const messageData = getMessageDataById(messageId);
+                    if (messageData && messageData.userId === userId) {
+                        const textElement = messageElement.querySelector('.message-text');
+                        const text = textElement?.textContent || '';
+                        startEdit(messageId, text, messageElement);
+                    }
+                }
+                
+                // Handle delete
+                if (target.classList.contains('delete-btn')) {
+                    const messageData = getMessageDataById(messageId);
+                    if (messageData && messageData.userId === userId) {
+                        deleteMessage(messageId);
+                    }
+                }
+                
+                // Handle reaction
+                if (target.classList.contains('add-reaction-btn') || target.closest('.add-reaction-btn')) {
+                    const btn = target.closest('.add-reaction-btn');
+                    e.stopPropagation();
+                    showReactionPicker(btn, messageId, messageElement);
+                }
+                
+                // Handle remove reaction
+                if (target.classList.contains('remove-reaction') || target.closest('.remove-reaction')) {
+                    const reactionBadge = target.closest('.reaction-badge');
+                    if (reactionBadge) {
+                        const reactionEmoji = reactionBadge.getAttribute('data-emoji');
+                        e.stopPropagation();
+                        removeReaction(messageId, reactionEmoji);
+                    }
+                }
+            });
+            
+            // Handle reply preview click
+            chatMessages.addEventListener('click', (e) => {
+                const replyPreview = e.target.closest('.message-reply');
+                if (replyPreview) {
+                    const messageElement = replyPreview.closest('.message');
+                    if (messageElement) {
+                        const messageId = messageElement.id.replace('message-', '');
+                        const messageData = getMessageDataById(messageId);
+                        if (messageData && messageData.replyTo && messageData.replyTo.id) {
+                            scrollToMessage(`message-${messageData.replyTo.id}`);
+                        }
+                    }
+                    e.stopPropagation();
+                }
             });
         }
-
-        // Event delegation for reply, edit, delete, and reaction buttons
-        if (chatMessages) chatMessages.addEventListener('click', (e) => {
-            const messageElement = e.target.closest('.message');
-            if (!messageElement) return;
-            
-            const messageId = messageElement.id.replace('message-', '');
-            
-            if (e.target.classList.contains('reply-btn')) {
-                const replyUsername = messageElement.querySelector('.message-username').textContent;
-                const messageText = messageElement.querySelector('.message-text')?.textContent || '[Media]';
-                startReply(messageId, replyUsername, messageText, messageElement);
-            }
-            
-            if (e.target.classList.contains('edit-btn')) {
-                const messageData = getMessageDataById(messageId);
-                if (messageData && messageData.userId === userId) {
-                    startEdit(messageId, messageData.text, messageElement);
-                }
-            }
-            
-            if (e.target.classList.contains('delete-btn')) {
-                const messageData = getMessageDataById(messageId);
-                if (messageData && messageData.userId === userId) {
-                    deleteMessage(messageId);
-                }
-            }
-            
-            if (e.target.classList.contains('add-reaction-btn') || e.target.closest('.add-reaction-btn')) {
-                const btn = e.target.closest('.add-reaction-btn');
-                e.stopPropagation();
-                showReactionPicker(btn, messageId, messageElement);
-            }
-            
-            if (e.target.classList.contains('remove-reaction') || e.target.closest('.remove-reaction')) {
-                const reactionEmoji = e.target.closest('.reaction-badge').getAttribute('data-emoji');
-                const messageId = e.target.closest('.message').id.replace('message-', '');
-                e.stopPropagation();
-                removeReaction(messageId, reactionEmoji);
-            }
-        });
-
+        
+        // Global click handler for reaction picker
         document.addEventListener('click', (e) => {
             if (activeReactionPicker && !activeReactionPicker.contains(e.target)) {
                 activeReactionPicker.remove();
                 activeReactionPicker = null;
             }
         });
-
-        if (chatMessages) chatMessages.addEventListener('click', (e) => {
-            const replyPreview = e.target.closest('.message-reply');
-            if (replyPreview) {
-                const messageElement = replyPreview.closest('.message');
-                if (messageElement) {
-                    const messageId = messageElement.id.replace('message-', '');
-                    const messageData = getMessageDataById(messageId);
-                    if (messageData && messageData.replyTo && messageData.replyTo.id) {
-                        scrollToMessage(`message-${messageData.replyTo.id}`);
-                    }
-                }
-                e.stopPropagation();
-            }
-        });
-
-        colorButtons.forEach(btn => {
-            if (btn.dataset.color === userColor) {
-                btn.classList.add('selected');
-            }
-            btn.addEventListener('click', () => {
-                colorButtons.forEach(b => b.classList.remove('selected'));
-                btn.classList.add('selected');
-                userColor = btn.dataset.color;
-                localStorage.setItem('userColor', userColor);
-                if (currentUserDisplay) {
-                    currentUserDisplay.style.color = userColor;
-                }
-            });
-        });
-
+        
         let messagesCache = new Map();
-
+        
+        // Preload YouTube API
+        const loadYouTubeAPIPromise = loadYouTubeAPI().catch(err => console.warn('YouTube API preload failed:', err));
+        
         // ========== VOICE CALL FUNCTIONS ==========
         
         function stopRingSound() {
@@ -291,9 +438,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (ringOscillator) {
                 try {
                     ringOscillator.stop();
-                } catch (e) {
-                    // Oscillator might already be stopped
-                }
+                } catch (e) {}
                 ringOscillator = null;
             }
             if (ringAudioContext) {
@@ -311,6 +456,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 userListContent.innerHTML = '<div style="text-align: center; padding: 20px;">No other users online</div>';
             } else {
                 userListContent.innerHTML = '';
+                // Batch user loading
+                const fragment = document.createDocumentFragment();
+                let loadedCount = 0;
+                
                 otherUsers.forEach(uid => {
                     const userRef = window.database.ref(`online/${uid}`);
                     userRef.once('value', (snapshot) => {
@@ -355,7 +504,11 @@ document.addEventListener('DOMContentLoaded', () => {
                                 userListModal.classList.add('hidden');
                             });
                             
-                            userListContent.appendChild(userItem);
+                            fragment.appendChild(userItem);
+                        }
+                        loadedCount++;
+                        if (loadedCount === otherUsers.length) {
+                            userListContent.appendChild(fragment);
                         }
                     });
                 });
@@ -373,18 +526,13 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 console.log('📞 Initiating call to:', targetUsername);
                 
-                // Request microphone access
                 localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-                
-                // Create peer connection
                 peerConnection = new RTCPeerConnection(configuration);
                 
-                // Add local stream tracks
                 localStream.getTracks().forEach(track => {
                     peerConnection.addTrack(track, localStream);
                 });
                 
-                // Handle incoming remote stream
                 peerConnection.ontrack = (event) => {
                     console.log('📡 Remote stream received');
                     remoteStream = event.streams[0];
@@ -397,7 +545,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 };
                 
-                // Handle ICE candidates
                 peerConnection.onicecandidate = (event) => {
                     if (event.candidate) {
                         console.log('📡 Sending ICE candidate');
@@ -407,7 +554,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 };
                 
-                // Handle connection state changes
                 peerConnection.onconnectionstatechange = () => {
                     console.log('Connection state:', peerConnection.connectionState);
                     if (peerConnection.connectionState === 'connected') {
@@ -423,13 +569,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 };
                 
-                // Create and send offer
                 const offer = await peerConnection.createOffer();
                 await peerConnection.setLocalDescription(offer);
                 
                 console.log('📞 Sending call offer to:', targetUserId);
                 
-                // Store the offer as a plain object with type and sdp
                 const offerData = {
                     type: offer.type,
                     sdp: offer.sdp
@@ -476,7 +620,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 console.log('📞 Received signal:', signal.type, 'from:', signal.fromUsername);
                 
-                // Check if this signal is for me
                 if (signal.target === userId) {
                     console.log('✅ Signal is for me!');
                     
@@ -485,13 +628,11 @@ document.addEventListener('DOMContentLoaded', () => {
                             console.log('📞 Processing call offer from:', signal.fromUsername);
                             
                             if (!callActive && !pendingCallData) {
-                                // Validate that the offer has proper type and sdp
                                 if (!signal.offer || !signal.offer.type || !signal.offer.sdp) {
                                     console.error('Invalid offer received:', signal.offer);
                                     return;
                                 }
                                 
-                                // Store the offer data
                                 pendingCallData = {
                                     offer: {
                                         type: signal.offer.type,
@@ -584,24 +725,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 signalId: callData.signalId
             };
             
-            // Show incoming call notification
             if (callModal) {
                 callModal.classList.remove('hidden');
                 updateCallStatus(`📞 Incoming call from ${callData.fromUsername}...`);
                 
-                // Show accept/reject buttons, hide call actions initially
                 const incomingActions = document.querySelector('.incoming-actions');
                 const callActions = document.querySelector('.call-actions');
-                if (incomingActions) {
-                    incomingActions.style.display = 'flex';
-                }
+                if (incomingActions) incomingActions.style.display = 'flex';
                 if (callActions) callActions.style.display = 'none';
                 
-                // Add animation to modal
                 const modalContent = callModal.querySelector('.modal-content');
                 if (modalContent) modalContent.classList.add('ring-animation');
                 
-                // Play incoming call sound
                 playCallSound();
             }
         }
@@ -630,27 +765,21 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             try {
-                // Stop ring sound immediately when accepting
                 stopRingSound();
                 
-                // Remove ring animation
                 const modalContent = callModal.querySelector('.modal-content');
                 if (modalContent) modalContent.classList.remove('ring-animation');
                 
-                // Request microphone access
                 console.log('🎤 Requesting microphone access...');
                 localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
                 console.log('✅ Microphone access granted');
                 
-                // Create peer connection
                 peerConnection = new RTCPeerConnection(configuration);
                 
-                // Add local stream tracks
                 localStream.getTracks().forEach(track => {
                     peerConnection.addTrack(track, localStream);
                 });
                 
-                // Handle incoming remote stream
                 peerConnection.ontrack = (event) => {
                     console.log('📡 Remote stream received in acceptCall');
                     remoteStream = event.streams[0];
@@ -663,7 +792,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 };
                 
-                // Handle ICE candidates
                 peerConnection.onicecandidate = (event) => {
                     if (event.candidate) {
                         console.log('📡 Sending ICE candidate');
@@ -673,7 +801,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 };
                 
-                // Handle connection state changes
                 peerConnection.onconnectionstatechange = () => {
                     console.log('Connection state:', peerConnection.connectionState);
                     if (peerConnection.connectionState === 'connected') {
@@ -685,7 +812,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 };
                 
-                // Set remote description from the stored offer
                 console.log('📞 Setting remote description...');
                 const offerDescription = new RTCSessionDescription({
                     type: pendingCallData.offer.type,
@@ -695,13 +821,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 await peerConnection.setRemoteDescription(offerDescription);
                 console.log('✅ Remote description set');
                 
-                // Create and send answer
                 console.log('📞 Creating answer...');
                 const answer = await peerConnection.createAnswer();
                 await peerConnection.setLocalDescription(answer);
                 console.log('✅ Answer created and set');
                 
-                // Store answer as plain object for Firebase
                 const answerData = {
                     type: answer.type,
                     sdp: answer.sdp
@@ -711,7 +835,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     answer: answerData
                 });
                 
-                // Clean up pending call data
                 const signalIdToRemove = pendingCallData.signalId;
                 pendingCallData = null;
                 
@@ -723,7 +846,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateCallStatus(`Connected with ${currentCallWith.username}`);
                 startCallTimer();
                 
-                // Show call actions, hide accept/reject buttons
                 const incomingActions = document.querySelector('.incoming-actions');
                 const callActions = document.querySelector('.call-actions');
                 if (incomingActions) incomingActions.style.display = 'none';
@@ -742,7 +864,6 @@ document.addEventListener('DOMContentLoaded', () => {
         function rejectCall() {
             console.log('🎯 Rejecting call...');
             
-            // Stop ring sound immediately
             stopRingSound();
             
             if (pendingCallData && pendingCallData.signalId) {
@@ -759,21 +880,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.database.ref(`calls/${currentCallWith.signalId}`).remove();
             }
             
-            // Remove ring animation
             const modalContent = callModal.querySelector('.modal-content');
             if (modalContent) modalContent.classList.remove('ring-animation');
             
             cleanupCall();
             if (callModal) callModal.classList.add('hidden');
             
-            // Clear pending call data
             pendingCallData = null;
         }
         
         function endCall() {
             console.log('📞 Ending call...');
             
-            // Stop any playing sounds
             stopRingSound();
             
             if (callActive && currentCallWith) {
@@ -862,7 +980,6 @@ document.addEventListener('DOMContentLoaded', () => {
         function cleanupCall() {
             console.log('🧹 Cleaning up call resources');
             
-            // Stop ring sound if still playing
             stopRingSound();
             
             if (callTimer) {
@@ -904,7 +1021,6 @@ document.addEventListener('DOMContentLoaded', () => {
         function playCallSound() {
             if (!soundEnabled) return;
             
-            // Stop any existing ring sound first
             stopRingSound();
             
             try {
@@ -948,7 +1064,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log('Web Audio API not available');
             }
         }
-
+        
         // ========== SMART LINK DETECTION WITH META TAGS ==========
         
         function isDirectMediaUrl(url) {
@@ -1055,7 +1171,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             return null;
         }
-
+        
         async function detectAndProcessLinksAsync(text) {
             if (!text) return { processedText: text, mediaEmbed: null };
             
@@ -1133,11 +1249,11 @@ document.addEventListener('DOMContentLoaded', () => {
             
             return { processedText: text, mediaEmbed: null };
         }
-
+        
         function createYouTubePlayer(containerId, videoId, messageId) {
             if (!window.YT || !window.YT.Player) {
                 console.log('⏳ YouTube API not ready, loading...');
-                loadYouTubeAPI().then(() => {
+                loadYouTubeAPIPromise.then(() => {
                     createYouTubePlayer(containerId, videoId, messageId);
                 }).catch(err => {
                     console.error('Failed to load YouTube API:', err);
@@ -1201,7 +1317,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         }
-
+        
         function createMediaEmbed(embedData, messageId) {
             if (!embedData) return '';
             
@@ -1231,7 +1347,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (isVideo) {
                         return `
                             <div class="media-embed video-embed" style="margin: 8px 0;">
-                                <video controls class="message-video" style="max-width: 100%; max-height: 400px; border-radius: 12px;">
+                                <video controls class="message-video" style="max-width: 100%; max-height: 400px; border-radius: 12px;" loading="lazy">
                                     <source src="${mediaUrl}" type="video/mp4">
                                     Your browser does not support video playback.
                                 </video>
@@ -1250,7 +1366,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         return `
                             <div class="media-embed image-embed" style="margin: 8px 0;">
                                 <img 
-                                    src="${mediaUrl}" 
+                                    data-src="${mediaUrl}" 
                                     alt="Shared image" 
                                     style="max-width: 100%; max-height: 400px; border-radius: 12px; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: transform 0.2s ease;" 
                                     loading="lazy" 
@@ -1264,7 +1380,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return '';
             }
         }
-
+        
         function linkifyAndProcessText(text) {
             if (!text) return '';
             
@@ -1278,7 +1394,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             return linkedText;
         }
-
+        
         function loadYouTubeAPI() {
             if (window.YT && window.YT.Player) {
                 console.log('✅ YouTube API already loaded');
@@ -1288,6 +1404,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return new Promise((resolve, reject) => {
                 const tag = document.createElement('script');
                 tag.src = 'https://www.youtube.com/iframe_api';
+                tag.async = true;
+                tag.defer = true;
                 const firstScriptTag = document.getElementsByTagName('script')[0];
                 firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
                 
@@ -1303,9 +1421,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 }, 10000);
             });
         }
-
-        loadYouTubeAPI().catch(err => console.warn('YouTube API load failed:', err));
-
+        
+        // Load YouTube API with caching
+        const loadYouTubeAPIOnce = (() => {
+            let promise = null;
+            return () => {
+                if (!promise) {
+                    promise = loadYouTubeAPI().catch(err => console.warn('YouTube API load failed:', err));
+                }
+                return promise;
+            };
+        })();
+        
+        loadYouTubeAPIOnce();
+        
         // ========== REACTION FUNCTIONS ==========
         
         function showReactionPicker(button, messageId, messageElement) {
@@ -1649,17 +1778,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log('Web Audio API not available, skipping reaction sound');
             }
         }
-
+        
         // ========== UNIFIED MEDIA UPLOAD FUNCTION ==========
-
+        
         function handleFileUpload(e) {
             const file = e.target.files[0];
             if (!file) return;
-
+            
             let mediaType = '';
             let defaultText = '';
             let maxSize = 0;
-
+            
             if (file.type.startsWith('image/')) {
                 mediaType = 'image';
                 defaultText = '📷 Shared an image';
@@ -1677,30 +1806,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 fileInput.value = '';
                 return;
             }
-
+            
             if (file.size > maxSize) {
                 const sizeMB = Math.round(maxSize / (1024 * 1024));
                 alert(`File is too large. Maximum size is ${sizeMB}MB.`);
                 fileInput.value = '';
                 return;
             }
-
+            
             uploadToCloudinary(file, mediaType, defaultText);
             fileInput.value = '';
         }
-
+        
         function uploadToCloudinary(file, mediaType, defaultText) {
             if (uploadBtn) {
                 uploadBtn.disabled = true;
                 uploadBtn.textContent = '⏳';
             }
-
+            
             const formData = new FormData();
             formData.append('file', file);
             formData.append('upload_preset', window.CLOUDINARY_UPLOAD_PRESET);
-
+            
             console.log(`📤 Uploading ${mediaType} to Cloudinary...`);
-
+            
             fetch(`https://api.cloudinary.com/v1_1/${window.CLOUDINARY_CLOUD_NAME}/auto/upload`, {
                 method: 'POST',
                 body: formData
@@ -1711,7 +1840,7 @@ document.addEventListener('DOMContentLoaded', () => {
             })
             .then(data => {
                 console.log(`✅ ${mediaType} uploaded:`, data.secure_url);
-
+                
                 const db = window.database;
                 if (db) {
                     db.ref('messages').push({
@@ -1753,9 +1882,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert(`Upload failed: ${error.message}`);
             });
         }
-
+        
         // ========== VOICE RECORDING FUNCTIONS ==========
-
+        
         async function startVoiceRecording() {
             try {
                 if (mediaRecorder && mediaRecorder.state === 'recording') {
@@ -1771,13 +1900,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 mediaRecorder = new MediaRecorder(audioStream);
                 audioChunks = [];
                 recordingStartTime = Date.now();
-
+                
                 mediaRecorder.ondataavailable = (e) => {
                     if (e.data.size > 0) {
                         audioChunks.push(e.data);
                     }
                 };
-
+                
                 mediaRecorder.onstop = () => {
                     console.log('🎤 Recording stopped, processing audio...');
                     if (audioChunks.length > 0) {
@@ -1799,7 +1928,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (recordingTimer) clearInterval(recordingTimer);
                     recordingTimer = null;
                 };
-
+                
                 mediaRecorder.start(100);
                 if (voiceRecordingUI) voiceRecordingUI.classList.remove('hidden');
                 if (voiceBtn) voiceBtn.classList.add('hidden');
@@ -1812,7 +1941,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (voiceBtn) voiceBtn.classList.remove('hidden');
             }
         }
-
+        
         function stopVoiceRecording() {
             if (mediaRecorder && mediaRecorder.state === 'recording') {
                 console.log('⏹️ Stopping voice recording...');
@@ -1829,7 +1958,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         }
-
+        
         function startRecordingTimer() {
             if (recordingTimer) clearInterval(recordingTimer);
             recordingTimer = setInterval(() => {
@@ -1841,7 +1970,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }, 100);
         }
-
+        
         function sendVoiceMessage(audioBlob) {
             if (audioBlob.size < 1000) {
                 console.log('Recording too short, not sending');
@@ -1853,9 +1982,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const formData = new FormData();
             formData.append('file', audioBlob, 'voice_message.webm');
             formData.append('upload_preset', window.CLOUDINARY_UPLOAD_PRESET);
-
+            
             console.log('📤 Uploading voice message to Cloudinary...');
-
+            
             fetch(`https://api.cloudinary.com/v1_1/${window.CLOUDINARY_CLOUD_NAME}/auto/upload`, {
                 method: 'POST',
                 body: formData
@@ -1866,7 +1995,7 @@ document.addEventListener('DOMContentLoaded', () => {
             })
             .then(data => {
                 console.log('✅ Voice message uploaded:', data.secure_url);
-
+                
                 const db = window.database;
                 if (db) {
                     db.ref('messages').push({
@@ -1899,30 +2028,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('Failed to send voice message: ' + error.message);
             });
         }
-
+        
         // ========== CORE FUNCTIONS ==========
-
+        
         function generateUserId() {
             const id = 'user_' + Math.random().toString(36).substr(2, 9);
             localStorage.setItem('userId', id);
             return id;
         }
-
+        
         function getMessageDataById(messageId) {
             return messagesCache.get(messageId);
         }
-
+        
         function storeMessageData(messageId, messageData) {
             messagesCache.set(messageId, messageData);
         }
-
+        
         function updateMessageInCache(messageId, updatedData) {
             const existing = messagesCache.get(messageId);
             if (existing) {
                 messagesCache.set(messageId, { ...existing, ...updatedData });
             }
         }
-
+        
         function enterChat() {
             const name = usernameInput.value.trim();
             if (!name) {
@@ -1950,13 +2079,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 isInitialized = true;
                 console.log('✅ Chat ready!');
                 
-                loadYouTubeAPI().catch(err => console.warn('YouTube API preload failed:', err));
+                loadYouTubeAPIOnce();
             } catch (err) {
                 console.error('Error entering chat:', err);
                 alert('Error entering chat: ' + err.message);
             }
         }
-
+        
         function showChatScreen() {
             if (setupScreen && chatScreen) {
                 setupScreen.classList.add('hidden');
@@ -1968,29 +2097,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 setTimeout(() => messageInput && messageInput.focus(), 100);
             }
         }
-
+        
         async function sendMessage() {
             const text = messageInput.value.trim();
             if (!text || !isInitialized) {
                 console.log('Cannot send message - text empty or not initialized');
                 return;
             }
-
+            
             try {
                 const db = window.database;
                 if (!db) {
                     alert('Database not connected');
                     return;
                 }
-
+                
                 const originalText = sendButton.textContent;
                 sendButton.disabled = true;
                 sendButton.textContent = '⏳';
-
+                
                 const { processedText, mediaEmbed } = await detectAndProcessLinksAsync(text);
                 
                 console.log('📝 Processed message:', { originalText: text, processedText, mediaEmbed });
-
+                
                 const messageData = {
                     username: username,
                     text: processedText,
@@ -2009,11 +2138,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     mediaEmbed: mediaEmbed,
                     reactions: {}
                 };
-
+                
                 db.ref('messages').push(messageData, function(error) {
                     sendButton.disabled = false;
                     sendButton.textContent = originalText;
-
+                    
                     if (error) {
                         console.error('❌ Error sending message:', error);
                         alert('Failed to send: ' + (error.message || 'Unknown error'));
@@ -2034,7 +2163,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('Error: ' + err.message);
             }
         }
-
+        
         function startEdit(messageId, currentText, messageElement) {
             if (currentReply) {
                 cancelReply();
@@ -2054,13 +2183,13 @@ document.addEventListener('DOMContentLoaded', () => {
             messageElement.style.transition = 'background-color 0.3s';
             messageElement.style.backgroundColor = 'rgba(108, 92, 231, 0.2)';
         }
-
+        
         function updateEditPreview() {
             const existingPreview = document.querySelector('.current-edit-preview');
             if (existingPreview) {
                 existingPreview.remove();
             }
-
+            
             if (currentEdit && messageInput) {
                 const previewDiv = document.createElement('div');
                 previewDiv.className = 'current-edit-preview';
@@ -2071,7 +2200,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <button class="cancel-edit" style="background: none; border: none; cursor: pointer; font-size: 16px; padding: 0 4px;" title="Cancel edit">✕</button>
                     </div>
                 `;
-
+                
                 const cancelBtn = previewDiv.querySelector('.cancel-edit');
                 if (cancelBtn) {
                     cancelBtn.addEventListener('click', (e) => {
@@ -2079,14 +2208,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         cancelEdit();
                     });
                 }
-
+                
                 const inputArea = document.querySelector('.input-area');
                 if (inputArea && inputArea.parentNode) {
                     inputArea.parentNode.insertBefore(previewDiv, inputArea);
                 }
             }
         }
-
+        
         function cancelEdit() {
             if (currentEdit && currentEdit.element) {
                 currentEdit.element.style.backgroundColor = '';
@@ -2099,7 +2228,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 editPreview.remove();
             }
         }
-
+        
         async function saveEditedMessage() {
             const newText = messageInput.value.trim();
             if (!newText || !currentEdit) return;
@@ -2165,7 +2294,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('Error: ' + err.message);
             }
         }
-
+        
         function deleteMessage(messageId) {
             if (!confirm('Are you sure you want to delete this message?')) return;
             
@@ -2215,10 +2344,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('Error: ' + err.message);
             }
         }
-
+        
         function displayMessage(message, options = {}) {
             if (!message || !chatMessages) return;
-
+            
             console.log('💬 Displaying message:', {
                 id: message.id,
                 text: message.text,
@@ -2226,22 +2355,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 isDeleted: message.isDeleted,
                 reactions: message.reactions
             });
-
+            
             if (message.id) {
                 storeMessageData(message.id, message);
             }
-
-            const atBottom = chatMessages.scrollHeight - chatMessages.scrollTop <= chatMessages.clientHeight + 50;
-
+            
+            const atBottom = isNearBottom || chatMessages.scrollHeight - chatMessages.scrollTop <= chatMessages.clientHeight + 50;
+            
             const messageDiv = document.createElement('div');
             const messageId = message.id || message.timestamp;
             messageDiv.className = `message ${message.userId === userId ? 'own' : 'other'}`;
             messageDiv.id = `message-${messageId}`;
             messageDiv.setAttribute('data-temp-id', message.timestamp);
-
+            
             const avatar = generateAvatar(message.username);
             const timestamp = formatTime(message.timestamp);
-
+            
             let content = `
                 <div class="message-avatar" style="background-color: ${message.userColor}">
                     ${avatar}
@@ -2251,7 +2380,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="message-username">${escapeHtml(message.username)}</span>
                         <span class="message-timestamp">${timestamp}</span>
                         <div class="message-actions">`;
-
+            
             if (message.userId === userId && !message.isDeleted) {
                 content += `
                     <button class="edit-btn" title="Edit message">✏️</button>
@@ -2266,7 +2395,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             content += `</div>
                     </div>`;
-
+            
             if (message.replyTo && !message.isDeleted) {
                 content += `
                     <div class="message-reply" data-reply-id="${message.replyTo.id}" style="cursor: pointer;" title="Click to view original message">
@@ -2277,22 +2406,22 @@ document.addEventListener('DOMContentLoaded', () => {
                         </div>
                     </div>`;
             }
-
+            
             if (message.isMedia && !message.isDeleted) {
                 if (message.mediaType === 'image') {
-                    content += `<img src="${message.mediaUrl}" alt="Shared image" class="message-image" loading="lazy" style="max-width: 100%; max-height: 400px; border-radius: 12px; margin-top: 8px;">`;
+                    content += `<img data-src="${message.mediaUrl}" alt="Shared image" class="message-image" loading="lazy" style="max-width: 100%; max-height: 400px; border-radius: 12px; margin-top: 8px;">`;
                 } else if (message.mediaType === 'video') {
-                    content += `<video controls class="message-video" style="max-width: 100%; max-height: 400px; border-radius: 12px; margin-top: 8px;"><source src="${message.mediaUrl}" type="video/mp4">Your browser does not support video playback.</video>`;
+                    content += `<video controls class="message-video" style="max-width: 100%; max-height: 400px; border-radius: 12px; margin-top: 8px;" loading="lazy"><source src="${message.mediaUrl}" type="video/mp4">Your browser does not support video playback.</video>`;
                 } else if (message.mediaType === 'audio') {
                     content += `<audio controls class="message-audio" style="width: 100%; margin-top: 8px;"><source src="${message.mediaUrl}" type="audio/mpeg">Your browser does not support audio playback.</audio>`;
                 }
             }
-
+            
             if (message.mediaEmbed && !message.isDeleted) {
                 console.log('🎨 Creating media embed for:', message.mediaEmbed);
                 content += createMediaEmbed(message.mediaEmbed, messageId);
             }
-
+            
             let textContent = message.text;
             let editedBadge = '';
             
@@ -2322,9 +2451,19 @@ document.addEventListener('DOMContentLoaded', () => {
             
             content += `</div>`;
             messageDiv.innerHTML = content;
-
+            
+            // Lazy load images
+            const img = messageDiv.querySelector('img');
+            if (img && img.hasAttribute('data-src')) {
+                if (intersectionObserver) {
+                    intersectionObserver.observe(messageDiv);
+                } else {
+                    img.src = img.dataset.src;
+                }
+            }
+            
             chatMessages.appendChild(messageDiv);
-
+            
             const replyPreview = messageDiv.querySelector('.message-reply');
             if (replyPreview) {
                 replyPreview.addEventListener('click', (e) => {
@@ -2335,7 +2474,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
             }
-
+            
             if (!options.skipSound && message.userId !== userId && !message.isDeleted) {
                 const { mentionedUsers } = processMentions(message.text);
                 const hasMention = isUserMentioned(mentionedUsers);
@@ -2347,15 +2486,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     playNotificationSound();
                 }
             }
-
+            
             if (atBottom) {
                 chatMessages.scrollTop = chatMessages.scrollHeight;
             }
+            
+            renderedMessages.set(messageId, messageDiv);
         }
-
+        
         function handleTyping() {
             if (!isInitialized) return;
-
+            
             if (typingTimeout) clearTimeout(typingTimeout);
             
             try {
@@ -2370,12 +2511,12 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (err) {
                 console.error('Error updating typing status:', err);
             }
-
+            
             typingTimeout = setTimeout(() => {
                 clearTypingStatus();
             }, 3000);
         }
-
+        
         function clearTypingStatus() {
             if (typingTimeout) clearTimeout(typingTimeout);
             try {
@@ -2387,7 +2528,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('Error clearing typing status:', e);
             }
         }
-
+        
         function setupOnlineStatus() {
             try {
                 const db = window.database;
@@ -2400,7 +2541,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     timestamp: Date.now(),
                     userColor: userColor
                 });
-
+                
                 window.addEventListener('beforeunload', () => {
                     try {
                         if (userRef) userRef.remove();
@@ -2412,15 +2553,18 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                         window.youtubePlayers.clear();
                         cleanupCall();
+                        if (intersectionObserver) {
+                            intersectionObserver.disconnect();
+                        }
                     } catch (e) {}
                 });
-
+                
                 const onlineRef = db.ref('online');
                 onlineRef.on('child_added', (snapshot) => {
                     onlineUsers.add(snapshot.key);
                     updateOnlineCount();
                 });
-
+                
                 onlineRef.on('child_removed', (snapshot) => {
                     onlineUsers.delete(snapshot.key);
                     updateOnlineCount();
@@ -2429,35 +2573,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('Error setting up online status:', err);
             }
         }
-
+        
         function updateOnlineCount() {
             const onlineCount = document.querySelector('.online-count');
             if (onlineCount) {
                 onlineCount.textContent = `Online: ${onlineUsers.size}`;
             }
         }
-
+        
         function listenForMessages() {
             try {
                 const db = window.database;
                 if (!db) return;
                 
-                const messagesRef = db.ref('messages');
+                const messagesRef = db.ref('messages').limitToLast(100);
                 let initialMessageLoad = true;
-
+                
                 messagesRef.once('value').then(() => {
                     initialMessageLoad = false;
                 }).catch((err) => {
                     console.warn('Error during initial message load check:', err);
                     initialMessageLoad = false;
                 });
-
+                
                 messagesRef.on('child_added', (snapshot) => {
                     const message = snapshot.val();
                     console.log('💬 New message received:', message);
                     if (message) {
                         message.id = snapshot.key;
-
+                        
                         const existingElement = document.querySelector(`[data-temp-id="${message.timestamp}"]`);
                         if (existingElement) {
                             existingElement.id = `message-${snapshot.key}`;
@@ -2471,7 +2615,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                 });
-
+                
                 messagesRef.on('child_changed', (snapshot) => {
                     const updatedMessage = snapshot.val();
                     updatedMessage.id = snapshot.key;
@@ -2480,7 +2624,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     const messageElement = document.getElementById(`message-${snapshot.key}`);
                     if (messageElement) {
-                        const wasAtBottom = chatMessages.scrollHeight - chatMessages.scrollTop <= chatMessages.clientHeight + 50;
+                        const wasAtBottom = isNearBottom;
                         displayMessage(updatedMessage, { skipSound: true });
                         const newElement = chatMessages.lastChild;
                         messageElement.replaceWith(newElement);
@@ -2489,7 +2633,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                 });
-
+                
                 const typingRef = db.ref('typing');
                 
                 typingRef.on('child_added', (snapshot) => {
@@ -2498,7 +2642,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         updateTypingIndicator();
                     }
                 });
-
+                
                 typingRef.on('child_removed', (snapshot) => {
                     typingUsers.delete(snapshot.key);
                     updateTypingIndicator();
@@ -2507,7 +2651,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('Error setting up listeners:', err);
             }
         }
-
+        
         function updateTypingIndicator() {
             if (typingIndicator) {
                 if (typingUsers.size > 0) {
@@ -2517,7 +2661,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         }
-
+        
         function toggleTheme() {
             isDarkMode = !isDarkMode;
             localStorage.setItem('darkMode', isDarkMode);
@@ -2526,11 +2670,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 themeToggle.textContent = isDarkMode ? '☀️' : '🌙';
             }
         }
-
+        
         function clearChat() {
             if (chatMessages && confirm('Are you sure you want to clear all messages?')) {
                 chatMessages.innerHTML = '';
                 messagesCache.clear();
+                renderedMessages.clear();
                 window.youtubePlayers.forEach((player, id) => {
                     if (player && player.destroy) {
                         player.destroy();
@@ -2539,7 +2684,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.youtubePlayers.clear();
             }
         }
-
+        
         function resetSession() {
             if (!confirm('Reset local data and reconnect?')) return;
             window.youtubePlayers.forEach((player, id) => {
@@ -2555,7 +2700,7 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.removeItem('userId');
             location.reload();
         }
-
+        
         function playNotificationSound() {
             if (!soundEnabled) return;
             
@@ -2579,12 +2724,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log('Web Audio API not available, skipping notification sound');
             }
         }
-
+        
         function cancelReply() {
             currentReply = null;
             updateReplyPreview();
         }
-
+        
         function startReply(messageId, replyUsername, messageText, messageElement) {
             if (currentEdit) {
                 cancelEdit();
@@ -2611,13 +2756,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 }, 500);
             }
         }
-
+        
         function updateReplyPreview() {
             const existingPreview = document.querySelector('.current-reply-preview');
             if (existingPreview) {
                 existingPreview.remove();
             }
-
+            
             if (currentReply && messageInput) {
                 const previewDiv = document.createElement('div');
                 previewDiv.className = 'current-reply-preview';
@@ -2628,7 +2773,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <button class="cancel-reply" style="background: none; border: none; cursor: pointer; font-size: 16px; padding: 0 4px;" title="Cancel reply">✕</button>
                     </div>
                 `;
-
+                
                 previewDiv.style.cursor = 'pointer';
                 previewDiv.addEventListener('click', (e) => {
                     if (e.target.classList.contains('cancel-reply')) {
@@ -2638,7 +2783,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         scrollToMessage(currentReply.elementId);
                     }
                 });
-
+                
                 const cancelBtn = previewDiv.querySelector('.cancel-reply');
                 if (cancelBtn) {
                     cancelBtn.addEventListener('click', (e) => {
@@ -2646,14 +2791,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         cancelReply();
                     });
                 }
-
+                
                 const inputArea = document.querySelector('.input-area');
                 if (inputArea && inputArea.parentNode) {
                     inputArea.parentNode.insertBefore(previewDiv, inputArea);
                 }
             }
         }
-
+        
         function scrollToMessage(elementId) {
             console.log('Scrolling to:', elementId);
             const messageElement = document.getElementById(elementId);
@@ -2689,7 +2834,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.warn('Message element not found:', elementId);
             }
         }
-
+        
         function playMentionSound() {
             if (!soundEnabled) return;
             
@@ -2714,7 +2859,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log('Web Audio API not available, skipping mention sound');
             }
         }
-
+        
         function processMentions(text) {
             if (!text) return { hasMention: false, mentionedUsers: [] };
             
@@ -2731,21 +2876,21 @@ document.addEventListener('DOMContentLoaded', () => {
             
             return { hasMention, mentionedUsers };
         }
-
+        
         function highlightMentions(text) {
             if (!text) return text;
             
             return text.replace(/@(\w+)/g, '<span class="mention">@$1</span>');
         }
-
+        
         function isUserMentioned(mentionedUsers) {
             return mentionedUsers.some(mentionedUsername => mentionedUsername.toLowerCase() === username.toLowerCase());
         }
-
+        
         function generateAvatar(name) {
             return (name && name.charAt(0).toUpperCase()) || '?';
         }
-
+        
         function formatTime(timestamp) {
             const date = new Date(timestamp);
             const now = new Date();
@@ -2753,13 +2898,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const diffMins = Math.floor(diffMs / 60000);
             const diffHours = Math.floor(diffMs / 3600000);
             const diffDays = Math.floor(diffMs / 86400000);
-
+            
             const timeOfDay = date.toLocaleTimeString('en-US', { 
                 hour: 'numeric',
                 minute: '2-digit',
                 hour12: true
             });
-
+            
             let relativeTime;
             if (diffMins < 1) {
                 relativeTime = 'now';
@@ -2774,10 +2919,10 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 relativeTime = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
             }
-
+            
             return `${timeOfDay} ${relativeTime}`;
         }
-
+        
         function escapeHtml(text) {
             if (!text) return '';
             const div = document.createElement('div');
