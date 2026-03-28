@@ -59,6 +59,32 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
     };
+
+    // Lightweight feature registry so new features can depend on other features.
+    const createFeatureRegistry = () => {
+        const features = new Map();
+
+        const register = (name, dependencies, initializer) => {
+            features.set(name, { dependencies, initializer, initialized: false });
+        };
+
+        const initialize = (name, stack = []) => {
+            const feature = features.get(name);
+            if (!feature || feature.initialized) return;
+
+            if (stack.includes(name)) {
+                throw new Error(`Circular feature dependency detected: ${[...stack, name].join(' -> ')}`);
+            }
+
+            feature.dependencies.forEach((dep) => initialize(dep, [...stack, name]));
+            feature.initializer();
+            feature.initialized = true;
+        };
+
+        const initializeAll = (names) => names.forEach((name) => initialize(name));
+
+        return { register, initializeAll };
+    };
     
     initializeApp();
 
@@ -141,133 +167,97 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Common emojis for quick reactions
         const quickReactions = ['👍', '❤️', '😂', '😮', '😢', '🔥', '🎉', '👎'];
-        
-        // Event Listeners - Setup with event delegation
-        document.addEventListener('click', (e) => {
-            const target = e.target;
-            
-            // Handle enter chat
-            if (target.id === 'enter-chat' || (target.id === 'username-input' && e.key === 'Enter')) {
-                if (target.id === 'username-input') {
-                    if (e.key === 'Enter') enterChat();
-                } else {
-                    enterChat();
+
+        const featureRegistry = createFeatureRegistry();
+
+        const initGlobalClickActions = () => {
+            const clickActions = new Map([
+                ['enter-chat', () => enterChat()],
+                ['theme-toggle', () => toggleTheme()],
+                ['clear-chat', () => clearChat()],
+                ['reset-session', () => resetSession()],
+                ['upload-btn', () => {
+                    const fileInput = getElement('file-input');
+                    if (fileInput) fileInput.click();
+                }],
+                ['voice-btn', () => startVoiceRecording()],
+                ['stop-recording', () => stopVoiceRecording()],
+                ['call-btn', () => showUserList()],
+                ['close-call-modal', () => {
+                    const modal = getElement('call-modal');
+                    if (modal) modal.classList.add('hidden');
+                    if (pendingCallData && !callActive) rejectCall();
+                }],
+                ['close-user-list', () => {
+                    const modal = getElement('user-list-modal');
+                    if (modal) modal.classList.add('hidden');
+                }]
+            ]);
+
+            document.addEventListener('click', (e) => {
+                const target = e.target;
+
+                if (target.classList && target.classList.contains('color-btn')) {
+                    const btns = document.querySelectorAll('.color-btn');
+                    btns.forEach((b) => b.classList.remove('selected'));
+                    target.classList.add('selected');
+                    userColor = target.dataset.color;
+                    localStorage.setItem('userColor', userColor);
+                    const currentUserDisplay = getElement('current-user');
+                    if (currentUserDisplay) currentUserDisplay.style.color = userColor;
+                    return;
                 }
+
+                const action = clickActions.get(target.id);
+                if (action) action();
+            });
+        };
+
+        const initInputActions = () => {
+            if (messageInput = getElement('message-input')) {
+                messageInput.addEventListener('input', debounce(handleTyping, 300));
+                messageInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        if (currentEdit) {
+                            saveEditedMessage();
+                        } else {
+                            sendMessage();
+                        }
+                    }
+                });
             }
-            
-            // Handle theme toggle
-            if (target.id === 'theme-toggle') {
-                toggleTheme();
-            }
-            
-            // Handle clear chat
-            if (target.id === 'clear-chat') {
-                clearChat();
-            }
-            
-            // Handle reset session
-            if (target.id === 'reset-session') {
-                resetSession();
-            }
-            
-            // Handle file upload
-            if (target.id === 'upload-btn') {
-                const fileInput = getElement('file-input');
-                if (fileInput) fileInput.click();
-            }
-            
-            // Handle voice recording
-            if (target.id === 'voice-btn') {
-                startVoiceRecording();
-            }
-            
-            // Handle stop recording
-            if (target.id === 'stop-recording') {
-                stopVoiceRecording();
-            }
-            
-            // Handle color selection
-            if (target.classList && target.classList.contains('color-btn')) {
-                const btns = document.querySelectorAll('.color-btn');
-                btns.forEach(b => b.classList.remove('selected'));
-                target.classList.add('selected');
-                userColor = target.dataset.color;
-                localStorage.setItem('userColor', userColor);
-                const currentUserDisplay = getElement('current-user');
-                if (currentUserDisplay) {
-                    currentUserDisplay.style.color = userColor;
-                }
-            }
-            
-            // Handle call button
-            if (target.id === 'call-btn') {
-                showUserList();
-            }
-            
-            // Handle close modals
-            if (target.id === 'close-call-modal') {
-                const modal = getElement('call-modal');
-                if (modal) modal.classList.add('hidden');
-                if (pendingCallData && !callActive) {
-                    rejectCall();
-                }
-            }
-            
-            if (target.id === 'close-user-list') {
-                const modal = getElement('user-list-modal');
-                if (modal) modal.classList.add('hidden');
-            }
-        });
-        
-        // Message input handling with debounce
-        if (messageInput = getElement('message-input')) {
-            messageInput.addEventListener('input', debounce(handleTyping, 300));
-            messageInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
+
+            if (sendButton = getElement('send-button')) {
+                sendButton.addEventListener('click', () => {
                     if (currentEdit) {
                         saveEditedMessage();
                     } else {
                         sendMessage();
                     }
-                }
-            });
-        }
-        
-        // Send button
-        if (sendButton = getElement('send-button')) {
-            sendButton.addEventListener('click', () => {
-                if (currentEdit) {
-                    saveEditedMessage();
-                } else {
-                    sendMessage();
-                }
-            });
-        }
-        
-        // Sound toggle
-        if (soundToggle = getElement('sound-enabled')) {
-            soundToggle.checked = soundEnabled;
-            soundToggle.addEventListener('change', (e) => {
-                soundEnabled = e.target.checked;
-                localStorage.setItem('soundEnabled', soundEnabled);
-            });
-        }
-        
-        // File input
-        if (fileInput = getElement('file-input')) {
-            fileInput.addEventListener('change', handleFileUpload);
-        }
-        
-        // Emoji button
-        if (emojiBtn = getElement('emoji-btn')) {
-            emojiBtn.addEventListener('click', () => {
-                const messageInput = getElement('message-input');
-                if (messageInput) messageInput.focus();
-            });
-        }
-        
-        // Voice call buttons - lazy bind
+                });
+            }
+
+            if (soundToggle = getElement('sound-enabled')) {
+                soundToggle.checked = soundEnabled;
+                soundToggle.addEventListener('change', (e) => {
+                    soundEnabled = e.target.checked;
+                    localStorage.setItem('soundEnabled', soundEnabled);
+                });
+            }
+
+            if (fileInput = getElement('file-input')) {
+                fileInput.addEventListener('change', handleFileUpload);
+            }
+
+            if (emojiBtn = getElement('emoji-btn')) {
+                emojiBtn.addEventListener('click', () => {
+                    const messageInput = getElement('message-input');
+                    if (messageInput) messageInput.focus();
+                });
+            }
+        };
+
         const initCallButtons = () => {
             if (acceptCallBtn = getElement('accept-call')) {
                 acceptCallBtn.addEventListener('click', acceptCall);
@@ -301,7 +291,10 @@ document.addEventListener('DOMContentLoaded', () => {
         userListContent = getElement('user-list-content');
         closeUserList = getElement('close-user-list');
         
-        initCallButtons();
+        featureRegistry.register('global-click-actions', [], initGlobalClickActions);
+        featureRegistry.register('input-actions', ['global-click-actions'], initInputActions);
+        featureRegistry.register('call-actions', ['input-actions'], initCallButtons);
+        featureRegistry.initializeAll(['call-actions']);
         
         // Get other DOM elements
         setupScreen = getElement('setup-screen');
@@ -345,72 +338,83 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 100));
         }
         
-        // Event delegation for message actions - optimized with single listener
+        // Event delegation for message actions with composable action handlers
         if (chatMessages) {
-            chatMessages.addEventListener('click', (e) => {
-                const target = e.target;
-                const messageElement = target.closest('.message');
-                if (!messageElement) return;
-                
-                const messageId = messageElement.id.replace('message-', '');
-                
-                // Handle reply
-                if (target.classList.contains('reply-btn')) {
-                    const replyUsername = messageElement.querySelector('.message-username')?.textContent || '';
-                    const messageText = messageElement.querySelector('.message-text')?.textContent || '[Media]';
-                    startReply(messageId, replyUsername, messageText, messageElement);
-                }
-                
-                // Handle edit
-                if (target.classList.contains('edit-btn')) {
-                    const messageData = getMessageDataById(messageId);
-                    if (messageData && messageData.userId === userId) {
-                        const textElement = messageElement.querySelector('.message-text');
-                        const text = textElement?.textContent || '';
-                        startEdit(messageId, text, messageElement);
+            const messageActions = [
+                {
+                    matches: (target) => target.classList.contains('reply-btn'),
+                    run: ({ messageId, messageElement }) => {
+                        const replyUsername = messageElement.querySelector('.message-username')?.textContent || '';
+                        const messageText = messageElement.querySelector('.message-text')?.textContent || '[Media]';
+                        startReply(messageId, replyUsername, messageText, messageElement);
                     }
-                }
-                
-                // Handle delete
-                if (target.classList.contains('delete-btn')) {
-                    const messageData = getMessageDataById(messageId);
-                    if (messageData && messageData.userId === userId) {
-                        deleteMessage(messageId);
+                },
+                {
+                    matches: (target) => target.classList.contains('edit-btn'),
+                    run: ({ messageId, messageElement }) => {
+                        const messageData = getMessageDataById(messageId);
+                        if (messageData && messageData.userId === userId) {
+                            const textElement = messageElement.querySelector('.message-text');
+                            const text = textElement?.textContent || '';
+                            startEdit(messageId, text, messageElement);
+                        }
                     }
-                }
-                
-                // Handle reaction
-                if (target.classList.contains('add-reaction-btn') || target.closest('.add-reaction-btn')) {
-                    const btn = target.closest('.add-reaction-btn');
-                    e.stopPropagation();
-                    showReactionPicker(btn, messageId, messageElement);
-                }
-                
-                // Handle remove reaction
-                if (target.classList.contains('remove-reaction') || target.closest('.remove-reaction')) {
-                    const reactionBadge = target.closest('.reaction-badge');
-                    if (reactionBadge) {
-                        const reactionEmoji = reactionBadge.getAttribute('data-emoji');
-                        e.stopPropagation();
-                        removeReaction(messageId, reactionEmoji);
+                },
+                {
+                    matches: (target) => target.classList.contains('delete-btn'),
+                    run: ({ messageId }) => {
+                        const messageData = getMessageDataById(messageId);
+                        if (messageData && messageData.userId === userId) {
+                            deleteMessage(messageId);
+                        }
                     }
-                }
-            });
-            
-            // Handle reply preview click
-            chatMessages.addEventListener('click', (e) => {
-                const replyPreview = e.target.closest('.message-reply');
-                if (replyPreview) {
-                    const messageElement = replyPreview.closest('.message');
-                    if (messageElement) {
+                },
+                {
+                    matches: (target) => target.classList.contains('add-reaction-btn') || target.closest('.add-reaction-btn'),
+                    run: ({ event, messageId, messageElement, target }) => {
+                        const btn = target.closest('.add-reaction-btn');
+                        event.stopPropagation();
+                        showReactionPicker(btn, messageId, messageElement);
+                    }
+                },
+                {
+                    matches: (target) => target.classList.contains('remove-reaction') || target.closest('.remove-reaction'),
+                    run: ({ event, messageId, target }) => {
+                        const reactionBadge = target.closest('.reaction-badge');
+                        if (reactionBadge) {
+                            const reactionEmoji = reactionBadge.getAttribute('data-emoji');
+                            event.stopPropagation();
+                            removeReaction(messageId, reactionEmoji);
+                        }
+                    }
+                },
+                {
+                    matches: (target) => Boolean(target.closest('.message-reply')),
+                    run: ({ event, messageElement }) => {
                         const messageId = messageElement.id.replace('message-', '');
                         const messageData = getMessageDataById(messageId);
                         if (messageData && messageData.replyTo && messageData.replyTo.id) {
                             scrollToMessage(`message-${messageData.replyTo.id}`);
                         }
+                        event.stopPropagation();
                     }
-                    e.stopPropagation();
                 }
+            ];
+
+            chatMessages.addEventListener('click', (event) => {
+                const target = event.target;
+                const messageElement = target.closest('.message');
+                if (!messageElement) return;
+
+                const context = {
+                    event,
+                    target,
+                    messageElement,
+                    messageId: messageElement.id.replace('message-', '')
+                };
+
+                const action = messageActions.find(({ matches }) => matches(target));
+                if (action) action.run(context);
             });
         }
         
