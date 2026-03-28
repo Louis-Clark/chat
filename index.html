@@ -306,136 +306,16 @@
             animation: ring 0.5s ease infinite;
         }
     </style>
+
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
 </head>
 <body>
-    <div class="app">
-        <!-- Setup Screen -->
-        <div id="setup-screen" class="setup-screen">
-            <div class="setup-card">
-                <h1>🎯 Chat Room</h1>
-                <div class="form-group">
-                    <input type="text" id="username-input" class="username-input" placeholder="Enter your username" maxlength="20" autocomplete="off">
-                </div>
-                <div class="color-selector">
-                    <label>Choose your color:</label>
-                    <div class="color-options">
-                        <button class="color-btn" data-color="#FF6B6B" style="background-color: #FF6B6B;" aria-label="Red color"></button>
-                        <button class="color-btn" data-color="#4ECDC4" style="background-color: #4ECDC4;" aria-label="Teal color"></button>
-                        <button class="color-btn" data-color="#45B7D1" style="background-color: #45B7D1;" aria-label="Blue color"></button>
-                        <button class="color-btn" data-color="#FFA07A" style="background-color: #FFA07A;" aria-label="Orange color"></button>
-                        <button class="color-btn" data-color="#98D8C8" style="background-color: #98D8C8;" aria-label="Mint color"></button>
-                        <button class="color-btn selected" data-color="#6C5CE7" style="background-color: #6C5CE7;" aria-label="Purple color"></button>
-                    </div>
-                </div>
-                <div class="sound-toggle">
-                    <label>
-                        <input type="checkbox" id="sound-enabled" checked>
-                        Enable notification sounds
-                    </label>
-                </div>
-                <button id="enter-chat" class="btn btn-primary">Enter Chat</button>
-            </div>
-        </div>
-
-        <!-- Chat Screen -->
-        <div id="chat-screen" class="chat-screen hidden">
-            <div class="chat-header">
-                <div class="header-content">
-                    <h1>💬 Chat</h1>
-                    <div class="user-info">
-                        <span id="current-user" class="username-display"></span>
-                        <div class="online-indicator"></div>
-                    </div>
-                </div>
-                <div class="header-actions">
-                    <button id="theme-toggle" class="btn-icon" title="Toggle theme">🌙</button>
-                    <button id="clear-chat" class="btn-icon" title="Clear chat history">🗑️</button>
-                    <button id="reset-session" class="btn-icon" title="Reset local session">🔄</button>
-                </div>
-            </div>
-
-            <!-- Voice Call Controls -->
-            <div class="call-controls">
-                <button id="call-btn" class="call-btn" title="Start a voice call with online users">📞 Call User</button>
-                <span class="online-count">Online: 0</span>
-            </div>
-
-            <div class="online-users-container">
-                <div id="online-users" class="online-users">
-                    <span class="online-count-text">Online Users</span>
-                </div>
-            </div>
-
-            <div id="chat-messages" class="chat-messages"></div>
-
-            <div id="typing-indicator" class="typing-indicator hidden">
-                <span>Someone is typing</span>
-                <div class="typing-dots">
-                    <div></div>
-                    <div></div>
-                    <div></div>
-                </div>
-            </div>
-
-            <div class="input-area">
-                <div class="input-controls">
-                    <button id="emoji-btn" class="btn-icon" title="Add emoji">😊</button>
-                    <!-- Unified upload button - handles images, videos, and audio -->
-                    <button id="upload-btn" class="btn-icon" title="Upload image, video, or audio">📎</button>
-                    <input type="file" id="file-input" class="hidden" accept="image/*,video/*,audio/*">
-                    <button id="voice-btn" class="btn-icon" title="Record voice message">🎤</button>
-                    <div id="voice-recording" class="voice-recording hidden">
-                        <span class="recording-dot">●</span>
-                        <span id="recording-time">0:00</span>
-                        <button id="stop-recording" class="btn-icon" title="Stop recording">⏹️</button>
-                    </div>
-                </div>
-                <div class="message-input-wrapper">
-                    <input type="text" id="message-input" class="message-input" placeholder="Type a message... (Paste YouTube, image, or GIF URLs for auto-embed)">
-                </div>
-                <button id="send-button" class="btn btn-send">Send</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Call Modal -->
-    <div id="call-modal" class="modal hidden">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Voice Call</h3>
-                <button id="close-call-modal" class="close-modal" title="Close">✕</button>
-            </div>
-            <div class="call-icon">📞</div>
-            <div id="call-status" class="call-status">Connecting...</div>
-            <div id="call-timer" class="call-timer">0:00</div>
-            <div class="call-actions">
-                <button id="mute-call" class="call-action-btn mute" title="Mute microphone">🎤</button>
-                <button id="speaker-call" class="call-action-btn speaker" title="Toggle speaker">🔈</button>
-                <button id="end-call" class="call-action-btn end" title="End call">📞</button>
-            </div>
-            <div class="incoming-actions" style="display: none;">
-                <button id="accept-call" class="call-action-btn accept" title="Accept call">Accept</button>
-                <button id="reject-call" class="call-action-btn reject" title="Reject call">Reject</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- User List Modal -->
-    <div id="user-list-modal" class="modal hidden">
-        <div class="modal-content" style="width: 400px;">
-            <div class="modal-header">
-                <h3>📞 Online Users</h3>
-                <button id="close-user-list" class="close-modal" title="Close">✕</button>
-            </div>
-            <div id="user-list-content" class="user-list-container">
-                <div style="text-align: center; padding: 20px; color: var(--text-secondary);">Loading users...</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Hidden audio element for remote call audio -->
-    <audio id="remote-audio" style="display: none;"></audio>
+    <div id="root"></div>
 
     <script src="script.js"></script>
+    <script type="text/babel" src="app.jsx"></script>
 </body>
 </html>

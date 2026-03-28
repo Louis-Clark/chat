@@ -1,5 +1,7 @@
 // Advanced Chat Application Script with Voice Calls - Performance Optimized
-document.addEventListener('DOMContentLoaded', () => {
+function initChatApp() {
+    if (window.__chatAppInitialized) return;
+    window.__chatAppInitialized = true;
     console.log('📱 Chat app starting...');
     
     // YouTube Player instances cache
@@ -2930,4 +2932,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return div.innerHTML;
         }
     }
-});
+}
+
+window.initChatApp = initChatApp;
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initChatApp);
+} else {
+    initChatApp();
+}
