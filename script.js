@@ -1,6 +1,22 @@
 // Advanced Chat Application Script with Voice Calls - Performance Optimized
 function initChatApp() {
     if (window.__chatAppInitialized) return;
+    
+    const hasRequiredDom = document.getElementById('setup-screen') &&
+        document.getElementById('chat-screen') &&
+        document.getElementById('message-input') &&
+        document.getElementById('send-button');
+    
+    if (!hasRequiredDom) {
+        if (!window.__chatAppInitRetryTimer) {
+            window.__chatAppInitRetryTimer = setTimeout(() => {
+                window.__chatAppInitRetryTimer = null;
+                initChatApp();
+            }, 50);
+        }
+        return;
+    }
+    
     window.__chatAppInitialized = true;
     console.log('📱 Chat app starting...');
     
