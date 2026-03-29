@@ -112,6 +112,92 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Common emojis for quick reactions
         const quickReactions = ['👍', '❤️', '😂', '😮', '😢', '🔥', '🎉', '👎'];
+        const preactApi = window.preact;
+        const preactH = preactApi && preactApi.h;
+        const preactRender = preactApi && preactApi.render;
+        let composerPreviewHost = null;
+        let lastComposerPreviewSignature = '';
+        let lastOnlineCountValue = -1;
+        let lastTypingUsersCount = -1;
+
+        function ensureComposerPreviewHost() {
+            if (!messageInput) return null;
+            if (composerPreviewHost && composerPreviewHost.isConnected) return composerPreviewHost;
+
+            const inputArea = messageInput.closest('.input-area');
+            if (!inputArea || !inputArea.parentNode) return null;
+
+            composerPreviewHost = document.getElementById('composer-preview-host');
+            if (!composerPreviewHost) {
+                composerPreviewHost = document.createElement('div');
+                composerPreviewHost.id = 'composer-preview-host';
+                inputArea.parentNode.insertBefore(composerPreviewHost, inputArea);
+            }
+            return composerPreviewHost;
+        }
+
+        function renderComposerPreview() {
+            const host = ensureComposerPreviewHost();
+            if (!host) return;
+
+            const previewSignature = currentEdit
+                ? `edit:${currentEdit.id}:${currentEdit.originalText}`
+                : currentReply
+                    ? `reply:${currentReply.id}:${currentReply.username}:${currentReply.preview}`
+                    : '';
+
+            if (previewSignature === lastComposerPreviewSignature) {
+                return;
+            }
+            lastComposerPreviewSignature = previewSignature;
+
+            if (!preactH || !preactRender || (!currentEdit && !currentReply)) {
+                host.innerHTML = '';
+                return;
+            }
+
+            const editPreviewText = currentEdit
+                ? `${currentEdit.originalText.substring(0, 50)}${currentEdit.originalText.length > 50 ? '...' : ''}`
+                : '';
+            const replyPreviewText = currentReply ? currentReply.preview : '';
+            const replyUserName = currentReply ? currentReply.username : '';
+
+            const previewRowStyle = {
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                marginBottom: '8px'
+            };
+
+            const previewVNode = currentEdit
+                ? preactH('div', { className: 'current-edit-preview' },
+                    preactH('div', { className: 'edit-content', style: { ...previewRowStyle, backgroundColor: 'rgba(255, 193, 7, 0.1)' } },
+                        preactH('span', { className: 'edit-label', style: { fontSize: '12px', color: '#ffc107' } }, '✏️ Editing message:'),
+                        preactH('span', { className: 'edit-text', style: { fontSize: '12px', color: 'var(--text-secondary)', flex: '1', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, editPreviewText),
+                        preactH('button', { className: 'cancel-edit', title: 'Cancel edit', style: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', padding: '0 4px' }, onClick: (e) => { e.stopPropagation(); cancelEdit(); } }, '✕')
+                    )
+                )
+                : preactH('div', { className: 'current-reply-preview', style: { cursor: 'pointer' }, onClick: (e) => {
+                    if (e.target.classList && e.target.classList.contains('cancel-reply')) return;
+                    if (currentReply && currentReply.elementId) {
+                        scrollToMessage(currentReply.elementId);
+                    }
+                } },
+                    preactH('div', { className: 'reply-content', style: { ...previewRowStyle, backgroundColor: 'rgba(108, 92, 231, 0.1)' } },
+                        preactH('span', { className: 'reply-label', style: { fontSize: '12px', color: 'var(--accent-color)' } },
+                            'Replying to ',
+                            preactH('strong', null, replyUserName),
+                            ':'
+                        ),
+                        preactH('span', { className: 'reply-text', style: { fontSize: '12px', color: 'var(--text-secondary)', flex: '1', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, replyPreviewText),
+                        preactH('button', { className: 'cancel-reply', title: 'Cancel reply', style: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', padding: '0 4px' }, onClick: (e) => { e.stopPropagation(); cancelReply(); } }, '✕')
+                    )
+                );
+
+            preactRender(previewVNode, host);
+        }
 
         // Event Listeners - Setup
         if (enterChatBtn) enterChatBtn.addEventListener('click', enterChat);
@@ -2056,35 +2142,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function updateEditPreview() {
-            const existingPreview = document.querySelector('.current-edit-preview');
-            if (existingPreview) {
-                existingPreview.remove();
-            }
-
-            if (currentEdit && messageInput) {
-                const previewDiv = document.createElement('div');
-                previewDiv.className = 'current-edit-preview';
-                previewDiv.innerHTML = `
-                    <div class="edit-content" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background-color: rgba(255, 193, 7, 0.1); border-radius: 8px; margin-bottom: 8px;">
-                        <span class="edit-label" style="font-size: 12px; color: #ffc107;">✏️ Editing message:</span>
-                        <span class="edit-text" style="font-size: 12px; color: var(--text-secondary); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(currentEdit.originalText.substring(0, 50))}${currentEdit.originalText.length > 50 ? '...' : ''}</span>
-                        <button class="cancel-edit" style="background: none; border: none; cursor: pointer; font-size: 16px; padding: 0 4px;" title="Cancel edit">✕</button>
-                    </div>
-                `;
-
-                const cancelBtn = previewDiv.querySelector('.cancel-edit');
-                if (cancelBtn) {
-                    cancelBtn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        cancelEdit();
-                    });
-                }
-
-                const inputArea = document.querySelector('.input-area');
-                if (inputArea && inputArea.parentNode) {
-                    inputArea.parentNode.insertBefore(previewDiv, inputArea);
-                }
-            }
+            renderComposerPreview();
         }
 
         function cancelEdit() {
@@ -2094,10 +2152,7 @@ document.addEventListener('DOMContentLoaded', () => {
             currentEdit = null;
             messageInput.value = '';
             sendButton.textContent = '📤 Send';
-            const editPreview = document.querySelector('.current-edit-preview');
-            if (editPreview) {
-                editPreview.remove();
-            }
+            renderComposerPreview();
         }
 
         async function saveEditedMessage() {
@@ -2431,9 +2486,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function updateOnlineCount() {
+            if (onlineUsers.size === lastOnlineCountValue) return;
+            lastOnlineCountValue = onlineUsers.size;
+
             const onlineCount = document.querySelector('.online-count');
             if (onlineCount) {
-                onlineCount.textContent = `Online: ${onlineUsers.size}`;
+                if (preactH && preactRender) {
+                    preactRender(preactH('span', null, `Online: ${onlineUsers.size}`), onlineCount);
+                } else {
+                    onlineCount.textContent = `Online: ${onlineUsers.size}`;
+                }
             }
         }
 
@@ -2510,10 +2572,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
         function updateTypingIndicator() {
             if (typingIndicator) {
-                if (typingUsers.size > 0) {
-                    typingIndicator.classList.remove('hidden');
-                } else {
-                    typingIndicator.classList.add('hidden');
+                const isVisible = typingUsers.size > 0;
+
+                if (typingUsers.size === lastTypingUsersCount && typingIndicator.classList.contains('hidden') === !isVisible) {
+                    return;
+                }
+                lastTypingUsersCount = typingUsers.size;
+
+                typingIndicator.classList.toggle('hidden', !isVisible);
+                if (isVisible && preactH && preactRender) {
+                    preactRender(
+                        preactH('div', null,
+                            preactH('span', null, typingUsers.size > 1 ? 'Several people are typing' : 'Someone is typing'),
+                            preactH('div', { className: 'typing-dots' },
+                                preactH('div', null),
+                                preactH('div', null),
+                                preactH('div', null)
+                            )
+                        ),
+                        typingIndicator
+                    );
                 }
             }
         }
@@ -2613,45 +2691,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function updateReplyPreview() {
-            const existingPreview = document.querySelector('.current-reply-preview');
-            if (existingPreview) {
-                existingPreview.remove();
-            }
-
-            if (currentReply && messageInput) {
-                const previewDiv = document.createElement('div');
-                previewDiv.className = 'current-reply-preview';
-                previewDiv.innerHTML = `
-                    <div class="reply-content" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background-color: rgba(108, 92, 231, 0.1); border-radius: 8px; margin-bottom: 8px;">
-                        <span class="reply-label" style="font-size: 12px; color: var(--accent-color);">Replying to <strong>${escapeHtml(currentReply.username)}</strong>:</span>
-                        <span class="reply-text" style="font-size: 12px; color: var(--text-secondary); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(currentReply.preview)}</span>
-                        <button class="cancel-reply" style="background: none; border: none; cursor: pointer; font-size: 16px; padding: 0 4px;" title="Cancel reply">✕</button>
-                    </div>
-                `;
-
-                previewDiv.style.cursor = 'pointer';
-                previewDiv.addEventListener('click', (e) => {
-                    if (e.target.classList.contains('cancel-reply')) {
-                        return;
-                    }
-                    if (currentReply.elementId) {
-                        scrollToMessage(currentReply.elementId);
-                    }
-                });
-
-                const cancelBtn = previewDiv.querySelector('.cancel-reply');
-                if (cancelBtn) {
-                    cancelBtn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        cancelReply();
-                    });
-                }
-
-                const inputArea = document.querySelector('.input-area');
-                if (inputArea && inputArea.parentNode) {
-                    inputArea.parentNode.insertBefore(previewDiv, inputArea);
-                }
-            }
+            renderComposerPreview();
         }
 
         function scrollToMessage(elementId) {
