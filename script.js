@@ -115,42 +115,24 @@ document.addEventListener('DOMContentLoaded', () => {
         const preactApi = window.preact;
         const preactH = preactApi && preactApi.h;
         const preactRender = preactApi && preactApi.render;
-        const onlineCountElement = document.querySelector('.online-count');
-        let composerPreviewHost = null;
-        let lastComposerPreviewSignature = '';
-        let lastOnlineCountValue = -1;
-        let lastTypingUsersCount = -1;
 
         function ensureComposerPreviewHost() {
             if (!messageInput) return null;
-            if (composerPreviewHost && composerPreviewHost.isConnected) return composerPreviewHost;
-
-            const inputArea = messageInput.closest('.input-area');
+            const inputArea = document.querySelector('.input-area');
             if (!inputArea || !inputArea.parentNode) return null;
 
-            composerPreviewHost = document.getElementById('composer-preview-host');
-            if (!composerPreviewHost) {
-                composerPreviewHost = document.createElement('div');
-                composerPreviewHost.id = 'composer-preview-host';
-                inputArea.parentNode.insertBefore(composerPreviewHost, inputArea);
+            let host = document.getElementById('composer-preview-host');
+            if (!host) {
+                host = document.createElement('div');
+                host.id = 'composer-preview-host';
+                inputArea.parentNode.insertBefore(host, inputArea);
             }
-            return composerPreviewHost;
+            return host;
         }
 
         function renderComposerPreview() {
             const host = ensureComposerPreviewHost();
             if (!host) return;
-
-            const previewSignature = currentEdit
-                ? `edit:${currentEdit.id}:${currentEdit.originalText}`
-                : currentReply
-                    ? `reply:${currentReply.id}:${currentReply.username}:${currentReply.preview}`
-                    : '';
-
-            if (previewSignature === lastComposerPreviewSignature) {
-                return;
-            }
-            lastComposerPreviewSignature = previewSignature;
 
             if (!preactH || !preactRender || (!currentEdit && !currentReply)) {
                 host.innerHTML = '';
@@ -2487,11 +2469,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function updateOnlineCount() {
-            if (onlineUsers.size === lastOnlineCountValue) return;
-            lastOnlineCountValue = onlineUsers.size;
-
-            if (onlineCountElement) {
-                onlineCountElement.textContent = `Online: ${onlineUsers.size}`;
+            const onlineCount = document.querySelector('.online-count');
+            if (onlineCount) {
+                if (preactH && preactRender) {
+                    preactRender(preactH('span', null, `Online: ${onlineUsers.size}`), onlineCount);
+                } else {
+                    onlineCount.textContent = `Online: ${onlineUsers.size}`;
+                }
             }
         }
 
@@ -2569,12 +2553,6 @@ document.addEventListener('DOMContentLoaded', () => {
         function updateTypingIndicator() {
             if (typingIndicator) {
                 const isVisible = typingUsers.size > 0;
-
-                if (typingUsers.size === lastTypingUsersCount && typingIndicator.classList.contains('hidden') === !isVisible) {
-                    return;
-                }
-                lastTypingUsersCount = typingUsers.size;
-
                 typingIndicator.classList.toggle('hidden', !isVisible);
                 if (isVisible && preactH && preactRender) {
                     preactRender(
